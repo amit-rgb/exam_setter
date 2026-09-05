@@ -4,8 +4,11 @@ import com.exam.setter.dto.ExamPaperResponse;
 import com.exam.setter.dto.GeneratedQuestion;
 import com.exam.setter.dto.QuestionGenerationRequest;
 import com.exam.setter.exception.ContextNotFoundException;
+import com.fasterxml.jackson.core.json.JsonReadFeature;
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.json.JsonMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
@@ -17,6 +20,8 @@ import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Service
@@ -26,21 +31,25 @@ public class QuestionGeneratorService {
 
     private final ChatClient chatClient;
     private final VectorStore vectorStore;
-    private final ObjectMapper objectMapper;
+    private final ObjectMapper lenientMapper;
     private final VectorMetadataHelperService metadataHelperService;
 
     public QuestionGeneratorService(ChatClient.Builder chatClientBuilder,
                                     VectorStore vectorStore,
-                                    ObjectMapper objectMapper,
                                     VectorMetadataHelperService metadataHelperService) {
         this.chatClient = chatClientBuilder.build();
         this.vectorStore = vectorStore;
-        this.objectMapper = objectMapper;
         this.metadataHelperService = metadataHelperService;
+
+        // Configure Jackson to tolerate raw LaTeX backslashes without crashing
+        this.lenientMapper = JsonMapper.builder()
+                .enable(JsonReadFeature.ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER)
+                .enable(JsonReadFeature.ALLOW_UNESCAPED_CONTROL_CHARS)
+                .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+                .build();
     }
 
     public List<GeneratedQuestion> generateQuestions(QuestionGenerationRequest request) {
-        // 1. Identify all distinct uploaded textbook PDFs for this subject/level
         List<String> distinctFiles = metadataHelperService.getDistinctFilesForSubjectAndLevels(
                 request.subject(),
                 request.targetLevels()
@@ -51,7 +60,6 @@ public class QuestionGeneratorService {
         List<Document> symmetricalDocs = new ArrayList<>();
 
         if (!distinctFiles.isEmpty()) {
-            // Symmetrical Stratified Retrieval: Fetch top chunks equally from each file
             int chunksPerFile = Math.max(3, (request.count() * 4) / distinctFiles.size());
             String semanticQuery = request.subject().trim() + " fundamental concepts laws chemical formulas principles exercises";
 
@@ -70,7 +78,6 @@ public class QuestionGeneratorService {
                 symmetricalDocs.addAll(fileDocs);
             }
         } else {
-            // Fallback to broad search if files metadata is not populated
             symmetricalDocs = vectorStore.similaritySearch(
                     SearchRequest.builder()
                             .query(request.subject() + " fundamental concepts formulas laws")
@@ -89,24 +96,20 @@ public class QuestionGeneratorService {
             ));
         }
 
-        // Shuffle chunks so the LLM doesn't bias only towards the first file in context
         Collections.shuffle(symmetricalDocs);
 
         String balancedTextbookContext = symmetricalDocs.stream()
                 .map(Document::getText)
                 .collect(Collectors.joining("\n\n---\n\n"));
 
-        // 2. Structured Prompt with Symmetrical Coverage Enforcement
         String systemPrompt = """
             You are an expert examination question setter.
             CRITICAL INSTRUCTIONS:
             1. Generate exactly <count> distinct questions EXCLUSIVELY using the provided Textbook Context.
-            2. DISTRIBUTE questions evenly across the different topics and concepts present in the context. Do NOT generate multiple questions testing the exact same law or definition.
-            3. Output MUST be a valid JSON object containing a "questions" array.
+            2. DISTRIBUTE questions evenly across the context topics. Do NOT duplicate identical laws or definitions.
+            3. Output MUST be valid JSON containing a "questions" array.
             4. Do NOT wrap output in markdown code blocks. Output raw JSON only.
-            5. Mathematical expressions and formulas MUST use standard LaTeX syntax:
-               - Inline: $H_2SO_4$, $PV = nRT$
-               - Block: $$\\text{PV} = \\text{nRT}$$
+            5. In all LaTeX formulas, escape backslashes so JSON parsing succeeds (e.g., write \\\\Delta, \\\\rightarrow, \\\\times).
             6. For MCQ types, provide exactly 4 options.
             7. Provide a rigorous step-by-step scientific solution in the explanation field.
 
@@ -114,14 +117,14 @@ public class QuestionGeneratorService {
             {
               "questions": [
                 {
-                  "questionText": "What is the molar mass of water?",
+                  "questionText": "What is the frequency of light having a wavelength of 400 nm?",
                   "questionType": "MCQ",
-                  "options": ["18 g/mol", "16 g/mol", "20 g/mol", "2 g/mol"],
+                  "options": ["7.5 x 10^14 Hz", "5.0 x 10^14 Hz", "3.0 x 10^8 Hz", "1.5 x 10^15 Hz"],
                   "correctAnswer": "A",
-                  "explanation": "Calculated as $2 \\times 1 + 16 = 18\\text{ g/mol}$.",
+                  "explanation": "Calculated using $\\\\nu = c / \\\\lambda$.",
                   "difficulty": "MEDIUM",
                   "marks": 4,
-                  "topic": "Mole Concept"
+                  "topic": "Atomic Structure"
                 }
               ]
             }
@@ -156,15 +159,29 @@ public class QuestionGeneratorService {
 
     private List<GeneratedQuestion> parseQuestions(String rawResponse) {
         if (rawResponse == null || rawResponse.isBlank()) return List.of();
+
+        // 1. Strip markdown fences if present
         String cleanJson = rawResponse.replaceAll("```json", "").replaceAll("```", "").trim();
+
+        // 2. Normalize unescaped LaTeX backslashes (e.g. \(, \), \Delta, \times)
+        cleanJson = sanitizeUnescapedBackslashes(cleanJson);
+
         try {
             if (cleanJson.startsWith("{")) {
-                ExamPaperResponse wrapped = objectMapper.readValue(cleanJson, ExamPaperResponse.class);
+                ExamPaperResponse wrapped = lenientMapper.readValue(cleanJson, ExamPaperResponse.class);
                 return wrapped.questions() != null ? wrapped.questions() : List.of();
             }
-            return objectMapper.readValue(cleanJson, new TypeReference<List<GeneratedQuestion>>() {});
+            return lenientMapper.readValue(cleanJson, new TypeReference<List<GeneratedQuestion>>() {});
         } catch (Exception e) {
+            log.error("Failed JSON content:\n{}", cleanJson);
             throw new RuntimeException("Failed to deserialize LLM question response: " + e.getMessage(), e);
         }
+    }
+
+    private String sanitizeUnescapedBackslashes(String json) {
+        // Double-escape any backslash that is not already part of a valid JSON escape sequence (\", \\, \/, \b, \f, \n, \r, \t, \\u)
+        Pattern pattern = Pattern.compile("\\\\(?!([\"\\\\/bfnrt]|u[0-9a-fA-F]{4}))");
+        Matcher matcher = pattern.matcher(json);
+        return matcher.replaceAll("\\\\\\\\");
     }
 }

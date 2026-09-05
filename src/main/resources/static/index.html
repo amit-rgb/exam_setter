@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI Exam Paper Generator Studio</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-screen">
+
+<!-- Header -->
+<header class="bg-slate-900 text-white py-4 shadow-md mb-6">
+    <div class="max-w-6xl mx-auto px-4 flex justify-between items-center">
+        <div>
+            <h1 class="text-xl font-bold tracking-wide">Exam Paper Generator Studio</h1>
+            <p class="text-xs text-slate-400">Automated RAG-driven Question Paper & Solution Setter</p>
+        </div>
+        <span class="text-xs font-mono bg-slate-800 px-3 py-1.5 rounded-full text-emerald-400 border border-slate-700">
+        ● RAG Pipeline Active
+      </span>
+    </div>
+</header>
+
+<main class="max-w-6xl mx-auto px-4 pb-12 space-y-6">
+
+    <!-- Global Alert Box -->
+    <div id="alertBox" class="hidden p-4 rounded-lg text-sm font-semibold transition"></div>
+
+    <!-- Step 1: Upload Textbook -->
+    <section class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+        <h2 class="text-base font-bold text-slate-800 mb-1">Step 1: Ingest Textbook PDF</h2>
+        <p class="text-xs text-slate-500 mb-4">Upload subject books to chunk and vector index into PostgreSQL pgvector storage.</p>
+
+        <form id="ingestForm" onsubmit="handleIngest(event)" class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+            <div>
+                <label class="block text-xs font-semibold text-slate-600 mb-1">Subject</label>
+                <input type="text" id="ingestSubject" value="chemistry" required class="w-full border border-slate-300 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500" placeholder="e.g. chemistry" />
+            </div>
+            <div>
+                <label class="block text-xs font-semibold text-slate-600 mb-1">Target Level</label>
+                <input type="text" id="ingestLevel" value="CLASS_11" required class="w-full border border-slate-300 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500" placeholder="e.g. CLASS_11" />
+            </div>
+            <div>
+                <label class="block text-xs font-semibold text-slate-600 mb-1">PDF File (Up to 50MB)</label>
+                <input type="file" id="ingestFile" required accept="application/pdf" class="w-full text-xs text-slate-500 file:mr-2 file:py-2 file:px-3 file:rounded file:border-0 file:bg-slate-100 file:font-semibold hover:file:bg-slate-200" />
+            </div>
+            <button type="submit" id="ingestBtn" class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2.5 px-4 rounded-lg text-sm transition">
+                Upload & Index
+            </button>
+        </form>
+    </section>
+
+    <!-- Step 2: Blueprint & Instant Export -->
+    <section class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+        <h2 class="text-base font-bold text-slate-800 mb-1">Step 2: Define Blueprint & Generate Paper</h2>
+        <p class="text-xs text-slate-500 mb-5">Configure exam sections. Questions will be retrieved symmetrically across all uploaded textbook chapters.</p>
+
+        <form id="assembleForm" onsubmit="handleAssemble(event)" class="space-y-4">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div class="md:col-span-2">
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">Exam Title</label>
+                    <input type="text" id="examTitle" value="Class 11 Chemistry Periodic Assessment" required class="w-full border border-slate-300 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">Duration (Minutes)</label>
+                    <input type="number" id="examDuration" value="45" required class="w-full border border-slate-300 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">Subject</label>
+                    <input type="text" id="blueprintSubject" value="chemistry" required class="w-full border border-slate-300 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">Target Levels (Comma separated)</label>
+                    <input type="text" id="blueprintLevels" value="CLASS_11" required class="w-full border border-slate-300 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
+                </div>
+            </div>
+
+            <!-- Sections List with Column Headers -->
+            <div class="pt-4 border-t border-slate-100">
+                <div class="flex justify-between items-center mb-3">
+                    <span class="text-xs font-bold text-slate-700 uppercase tracking-wider">Sections Configuration</span>
+                    <button type="button" onclick="addSectionRow()" class="text-xs bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 px-3 py-1.5 rounded-md font-semibold transition">
+                        + Add Section
+                    </button>
+                </div>
+
+                <!-- Explicit Column Labels Header for Desktop -->
+                <div class="hidden md:grid grid-cols-12 gap-3 px-3 py-2 bg-slate-100 rounded-t-lg border border-b-0 border-slate-200 text-[11px] font-bold text-slate-600 uppercase tracking-wider">
+                    <div class="col-span-4">Section Title</div>
+                    <div class="col-span-2">Question Type</div>
+                    <div class="col-span-2 text-center">No. of Questions</div>
+                    <div class="col-span-1 text-center">Marks (+ve)</div>
+                    <div class="col-span-1 text-center">Negative (-ve)</div>
+                    <div class="col-span-2">Difficulty</div>
+                </div>
+
+                <!-- Dynamic Container -->
+                <div id="sectionsContainer" class="space-y-2"></div>
+            </div>
+
+            <button type="submit" id="assembleBtn" class="w-full bg-slate-900 hover:bg-black text-white font-semibold py-3.5 rounded-lg text-sm transition mt-4 shadow-sm">
+                Generate Exam Paper
+            </button>
+        </form>
+    </section>
+
+    <!-- Step 3: Direct Download Actions -->
+    <section id="downloadSection" class="hidden bg-emerald-50 border border-emerald-200 p-6 rounded-xl shadow-sm text-center space-y-4">
+        <div>
+            <span class="inline-block bg-emerald-600 text-white text-xs font-bold px-3 py-1 rounded-full mb-2">Paper Ready!</span>
+            <h3 id="generatedPaperTitle" class="text-lg font-bold text-slate-800">Exam Title</h3>
+            <p id="generatedPaperMeta" class="text-xs text-slate-600">Total Marks: 0 | Duration: 45 min</p>
+        </div>
+
+        <div class="flex justify-center gap-4 pt-2">
+            <button onclick="downloadPdf(false)" class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2.5 px-6 rounded-lg text-sm shadow transition flex items-center gap-2">
+                <span>📄</span> Download Student PDF
+            </button>
+            <button onclick="downloadPdf(true)" class="bg-slate-800 hover:bg-slate-900 text-white font-medium py-2.5 px-6 rounded-lg text-sm shadow transition flex items-center gap-2">
+                <span>📘</span> Download Solutions PDF
+            </button>
+        </div>
+    </section>
+
+</main>
+
+<script>
+    let activePaperId = null;
+
+    function showAlert(msg, isError = false) {
+      const box = document.getElementById('alertBox');
+      box.textContent = msg;
+      box.className = `p-4 rounded-lg text-sm font-semibold ${isError ? 'bg-rose-50 text-rose-700 border border-rose-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}`;
+      box.classList.remove('hidden');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function addSectionRow(name = "Section A: Conceptual MCQs", type = "MCQ", count = 3, marks = 4, neg = 1.0, diff = "EASY") {
+      const container = document.getElementById('sectionsContainer');
+      const div = document.createElement('div');
+      div.className = "section-row p-3 bg-white border border-slate-200 rounded-lg shadow-sm grid grid-cols-1 md:grid-cols-12 gap-3 items-center text-xs";
+
+      div.innerHTML = `
+        <div class="md:col-span-4">
+          <label class="block md:hidden text-slate-500 font-semibold mb-1">Section Title</label>
+          <input type="text" class="sec-name w-full border border-slate-300 rounded-md p-2 outline-none focus:ring-1 focus:ring-indigo-500" value="${name}" placeholder="e.g. Section A: Conceptual MCQs" required />
+        </div>
+
+        <div class="md:col-span-2">
+          <label class="block md:hidden text-slate-500 font-semibold mb-1">Question Type</label>
+          <select class="sec-type w-full border border-slate-300 rounded-md p-2 bg-white outline-none focus:ring-1 focus:ring-indigo-500">
+            <option value="MCQ" ${type === 'MCQ' ? 'selected' : ''}>MCQ</option>
+            <option value="NUMERICAL" ${type === 'NUMERICAL' ? 'selected' : ''}>NUMERICAL</option>
+            <option value="DESCRIPTIVE" ${type === 'DESCRIPTIVE' ? 'selected' : ''}>DESCRIPTIVE</option>
+          </select>
+        </div>
+
+        <div class="md:col-span-2">
+          <label class="block md:hidden text-slate-500 font-semibold mb-1">No. of Questions</label>
+          <input type="number" class="sec-count w-full border border-slate-300 rounded-md p-2 text-center outline-none focus:ring-1 focus:ring-indigo-500" value="${count}" min="1" max="50" placeholder="Qty" required />
+        </div>
+
+        <div class="md:col-span-1">
+          <label class="block md:hidden text-slate-500 font-semibold mb-1">Marks (+ve)</label>
+          <input type="number" class="sec-marks w-full border border-slate-300 rounded-md p-2 text-center outline-none focus:ring-1 focus:ring-indigo-500" value="${marks}" min="1" placeholder="+4" required />
+        </div>
+
+        <div class="md:col-span-1">
+          <label class="block md:hidden text-slate-500 font-semibold mb-1">Negative (-ve)</label>
+          <input type="number" step="0.25" class="sec-neg w-full border border-slate-300 rounded-md p-2 text-center outline-none focus:ring-1 focus:ring-indigo-500" value="${neg}" min="0" placeholder="0.0" required />
+        </div>
+
+        <div class="md:col-span-2 flex items-center gap-2">
+          <div class="flex-1">
+            <label class="block md:hidden text-slate-500 font-semibold mb-1">Difficulty</label>
+            <select class="sec-diff w-full border border-slate-300 rounded-md p-2 bg-white outline-none focus:ring-1 focus:ring-indigo-500">
+              <option value="EASY" ${diff === 'EASY' ? 'selected' : ''}>EASY</option>
+              <option value="MEDIUM" ${diff === 'MEDIUM' ? 'selected' : ''}>MEDIUM</option>
+              <option value="HARD" ${diff === 'HARD' ? 'selected' : ''}>HARD</option>
+            </select>
+          </div>
+          <button type="button" title="Remove Section" onclick="this.closest('.section-row').remove()" class="text-slate-400 hover:text-rose-600 font-bold p-1 text-sm mt-4 md:mt-0 transition">
+            ✕
+          </button>
+        </div>
+      `;
+      container.appendChild(div);
+    }
+
+    async function handleIngest(e) {
+      e.preventDefault();
+      const btn = document.getElementById('ingestBtn');
+      btn.disabled = true;
+      btn.textContent = "Ingesting & Chunking...";
+
+      const formData = new FormData();
+      formData.append('file', document.getElementById('ingestFile').files[0]);
+      formData.append('subject', document.getElementById('ingestSubject').value);
+      formData.append('targetLevel', document.getElementById('ingestLevel').value);
+
+      try {
+        const res = await fetch('/api/ingest/pdf', { method: 'POST', body: formData });
+        const data = await res.json();
+        if (res.ok) {
+          showAlert(`Successfully indexed ${data.indexedChunks} chunks from ${data.fileName}`);
+          document.getElementById('ingestFile').value = "";
+        } else {
+          showAlert(data.error || 'Ingestion failed', true);
+        }
+      } catch (err) {
+        showAlert(err.message, true);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Upload & Index";
+      }
+    }
+
+    async function handleAssemble(e) {
+      e.preventDefault();
+      const btn = document.getElementById('assembleBtn');
+      btn.disabled = true;
+      btn.textContent = "Running Symmetrical RAG & Generating Paper...";
+
+      const sections = Array.from(document.querySelectorAll('.section-row')).map(row => ({
+        sectionName: row.querySelector('.sec-name').value,
+        questionType: row.querySelector('.sec-type').value,
+        questionCount: parseInt(row.querySelector('.sec-count').value),
+        marksPerQuestion: parseInt(row.querySelector('.sec-marks').value),
+        negativeMarks: parseFloat(row.querySelector('.sec-neg').value),
+        difficulty: row.querySelector('.sec-diff').value
+      }));
+
+      const payload = {
+        examTitle: document.getElementById('examTitle').value,
+        subject: document.getElementById('blueprintSubject').value,
+        targetLevels: document.getElementById('blueprintLevels').value.split(',').map(s => s.trim()),
+        durationMinutes: parseInt(document.getElementById('examDuration').value),
+        sections: sections
+      };
+
+      try {
+        const res = await fetch('/api/exam-papers/assemble', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const paper = await res.json();
+        if (res.ok) {
+          activePaperId = paper.id;
+          document.getElementById('generatedPaperTitle').textContent = paper.title;
+          document.getElementById('generatedPaperMeta').textContent = `Subject: ${paper.subject.toUpperCase()} | Total Marks: ${paper.totalMarks} | Duration: ${paper.durationMinutes} min`;
+          document.getElementById('downloadSection').classList.remove('hidden');
+          showAlert("Paper generated successfully! Click below to download.");
+          document.getElementById('downloadSection').scrollIntoView({ behavior: 'smooth' });
+        } else {
+          showAlert(paper.error || 'Paper assembly failed', true);
+        }
+      } catch (err) {
+        showAlert(err.message, true);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Generate Exam Paper";
+      }
+    }
+
+    function downloadPdf(includeSolutions) {
+      if (!activePaperId) return;
+      window.open(`/api/exam-papers/${activePaperId}/export/pdf?includeSolutions=${includeSolutions}`, '_blank');
+    }
+
+    // Default template rows
+    addSectionRow("Section A: Conceptual MCQs", "MCQ", 3, 4, 1.0, "EASY");
+    addSectionRow("Section B: Numerical Problems", "NUMERICAL", 2, 4, 0.0, "MEDIUM");
+</script>
+</body>
+</html>

@@ -93,4 +93,53 @@ public class ExamPaperService {
         // 3. Persist cascade tree: ExamPaper -> ExamSections -> Questions
         return examPaperRepository.save(paperEntity);
     }
+
+    /**
+     * Assemble an in-memory AssembledExamPaper DTO without persisting to the database.
+     * This is used by endpoints that only need a generated preview/export.
+     */
+    public com.exam.setter.dto.AssembledExamPaper assembleExamPaper(ExamPaperBlueprintRequest request) {
+        int totalMarks = 0;
+        int totalQuestions = 0;
+
+        List<com.exam.setter.dto.AssembledExamPaper.AssembledSection> assembledSections = new ArrayList<>();
+
+        for (SectionBlueprint section : request.sections()) {
+            QuestionGenerationRequest genRequest = new QuestionGenerationRequest(
+                    request.subject(),
+                    request.targetLevels(),
+                    section.questionType(),
+                    section.difficulty(),
+                    section.questionCount(),
+                    section.marksPerQuestion()
+            );
+
+            List<GeneratedQuestion> generatedQuestions = questionGeneratorService.generateQuestions(genRequest);
+
+            int sectionMarks = generatedQuestions.size() * section.marksPerQuestion();
+            totalMarks += sectionMarks;
+            totalQuestions += generatedQuestions.size();
+
+            com.exam.setter.dto.AssembledExamPaper.AssembledSection assembledSection =
+                    new com.exam.setter.dto.AssembledExamPaper.AssembledSection(
+                            section.sectionName(),
+                            sectionMarks,
+                            section.negativeMarks(),
+                            generatedQuestions
+                    );
+
+            assembledSections.add(assembledSection);
+        }
+
+        return new com.exam.setter.dto.AssembledExamPaper(
+                request.examTitle(),
+                request.subject().trim().toLowerCase(),
+                request.targetLevels(),
+                request.durationMinutes(),
+                totalMarks,
+                totalQuestions,
+                assembledSections,
+                Instant.now()
+        );
+    }
 }

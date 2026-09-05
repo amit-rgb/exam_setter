@@ -11,7 +11,7 @@ import java.util.List;
 public class HtmlExamPaperRenderer {
 
     /**
-     * Renders strict XHTML directly from JPA Entity for Flying Saucer OpenPDF
+     * Renders strict XHTML directly from JPA Entity for Flying Saucer OpenPDF.
      */
     public String renderHtmlFromEntity(ExamPaperEntity paper, boolean includeSolutions) {
         StringBuilder sb = new StringBuilder();
@@ -120,14 +120,27 @@ public class HtmlExamPaperRenderer {
 
     private String cleanMath(String text) {
         if (text == null) return "";
-        return text.replace("$$", "")
+
+        // Normalize malformed isotope notation like ^{80_{35Br or ^{80}_{35}Br to 80/35 Br
+        String cleaned = text.replaceAll("\\^\\{?(\\d+)_\\{?(\\d+)\\s*([A-Za-z]+)\\}?", "[$1/$2 $3]")
+                .replaceAll("\\^\\{?(\\d+)\\}?_\\{?(\\d+)\\}?\\s*([A-Za-z]+)", "[$1/$2 $3]");
+
+        // Normalize inline / display LaTeX delimiters and standard commands
+        cleaned = cleaned.replace("$$", "")
                 .replace("$", "")
+                .replace("\\(", "")
+                .replace("\\)", "")
+                .replace("\\[", "")
+                .replace("\\]", "")
                 .replace("\\rightarrow", " -> ")
                 .replace("ightarrow", " -> ")
                 .replace("\\times", " x ")
                 .replace("\\Delta", "Delta")
                 .replace("\\text{", "")
+                .replace("\\mathrm{", "")
                 .replace("}", "");
+
+        return cleaned;
     }
 
     private String escapeXml(String text) {

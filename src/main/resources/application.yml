@@ -1,0 +1,51 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: exam-paper-generator
+
+  # Correct hierarchy: spring.servlet.multipart
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: 50MB
+      max-request-size: 50MB
+
+  # Database TCP connection pooling
+  datasource:
+    url: jdbc:postgresql://localhost:5432/exambank_db
+    username: postgres
+    password: January@2020
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 5
+      minimum-idle: 2
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+  # Cloud AI Network Configuration
+  ai:
+    openai:
+      api-key: ${OPENAI_API_KEY}
+      chat:
+        options:
+          model: gpt-4o-mini
+          temperature: 0.2
+      embedding:
+        options:
+          model: text-embedding-3-small
+
+    # Vector Storage Layout in PostgreSQL
+    vectorstore:
+      pgvector:
+        table-name: document_embeddings
+        dimensions: 1536
+        distance-type: COSINE_DISTANCE
+        initialize-schema: true

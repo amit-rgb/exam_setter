@@ -50,7 +50,7 @@ public class HtmlExamPaperRenderer {
         sb.append("  <div class=\"meta-bar\">\n");
         sb.append("    <span>SUBJECT: ").append(escapeXml(paper.getSubject().toUpperCase())).append("</span> | ");
         sb.append("    <span>DURATION: ").append(paper.getDurationMinutes()).append(" MIN</span> | ");
-        sb.append("    <span>MAX MARKS: ").append(paper.getTotalMarks()).append("</span>\n");
+        sb.append("    <span>MAX MARKS: ").append(selectedTotalMarks).append("</span>\n");
         sb.append("  </div>\n");
         sb.append("</div>\n");
 

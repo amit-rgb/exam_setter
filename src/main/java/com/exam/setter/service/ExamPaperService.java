@@ -13,6 +13,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import java.util.HashSet;
 
 @Service
 public class ExamPaperService {
@@ -80,6 +82,7 @@ public class ExamPaperService {
                             .marks(gq.marks())
                             .topic(gq.topic())
                             .moderationStatus(ModerationStatus.PENDING_REVIEW)
+                            .includedInPaper(false)
                             .build()
             ).toList();
 
@@ -92,6 +95,39 @@ public class ExamPaperService {
 
         // 3. Persist cascade tree: ExamPaper -> ExamSections -> Questions
         return examPaperRepository.save(paperEntity);
+    }
+
+    @Transactional
+    public ExamPaperEntity updateQuestionSelection(java.util.UUID paperId, java.util.List<java.util.UUID> includedQuestionIds) {
+        ExamPaperEntity paper = examPaperRepository.findById(paperId)
+                .orElseThrow(() -> new RuntimeException("Exam Paper not found: " + paperId));
+
+        java.util.Set<java.util.UUID> included = includedQuestionIds == null
+                ? Set.of()
+                : new HashSet<>(includedQuestionIds);
+
+        paper.getSections().forEach(section ->
+                section.getQuestions().forEach(question ->
+                        question.setIncludedInPaper(included.contains(question.getId()))
+                )
+        );
+
+        int selectedMarks = paper.getSections().stream()
+                .flatMap(section -> section.getQuestions().stream())
+                .filter(QuestionEntity::isIncludedInPaper)
+                .mapToInt(QuestionEntity::getMarks)
+                .sum();
+        paper.setTotalMarks(selectedMarks);
+
+        paper.getSections().forEach(section -> {
+            int sectionMarks = section.getQuestions().stream()
+                    .filter(QuestionEntity::isIncludedInPaper)
+                    .mapToInt(QuestionEntity::getMarks)
+                    .sum();
+            section.setSectionMarks(sectionMarks);
+        });
+
+        return examPaperRepository.save(paper);
     }
 
     /**

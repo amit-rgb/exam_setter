@@ -16,6 +16,13 @@ public class HtmlExamPaperRenderer {
     public String renderHtmlFromEntity(ExamPaperEntity paper, boolean includeSolutions) {
         StringBuilder sb = new StringBuilder();
 
+        int selectedTotalMarks = paper.getSections() == null ? 0 : paper.getSections().stream()
+                .filter(section -> section.getQuestions() != null)
+                .flatMap(section -> section.getQuestions().stream())
+                .filter(QuestionEntity::isIncludedInPaper)
+                .mapToInt(QuestionEntity::getMarks)
+                .sum();
+
         sb.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
         sb.append("<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Strict//EN\" \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd\">\n");
         sb.append("<html xmlns=\"http://www.w3.org/1999/xhtml\">\n");
@@ -50,7 +57,7 @@ public class HtmlExamPaperRenderer {
         sb.append("  <div class=\"meta-bar\">\n");
         sb.append("    <span>SUBJECT: ").append(escapeXml(paper.getSubject().toUpperCase())).append("</span> | ");
         sb.append("    <span>DURATION: ").append(paper.getDurationMinutes()).append(" MIN</span> | ");
-        sb.append("    <span>MAX MARKS: ").append(paper.getTotalMarks()).append("</span>\n");
+        sb.append("    <span>MAX MARKS: ").append(selectedTotalMarks).append("</span>\n");
         sb.append("  </div>\n");
         sb.append("</div>\n");
 
@@ -73,15 +80,27 @@ public class HtmlExamPaperRenderer {
                     continue;
                 }
 
+                long selectedQuestionCount = questions.stream()
+                        .filter(QuestionEntity::isIncludedInPaper)
+                        .count();
+                if (selectedQuestionCount == 0) {
+                    continue;
+                }
+                int selectedSectionMarks = questions.stream()
+                        .filter(QuestionEntity::isIncludedInPaper)
+                        .mapToInt(QuestionEntity::getMarks)
+                        .sum();
+
                 sb.append("<div class=\"section-title\">\n");
                 sb.append("  <span>").append(escapeXml(section.getSectionName())).append("</span>\n");
-                sb.append("  <span style=\"float: right;\">[Section Marks: ").append(section.getSectionMarks()).append("]</span>\n");
+                sb.append("  <span style=\"float: right;\">[Section Marks: ").append(selectedSectionMarks).append("]</span>\n");
                 if (section.getNegativeMarks() > 0) {
                     sb.append("  <span class=\"neg-mark\">(Negative Marking: -").append(section.getNegativeMarks()).append(")</span>\n");
                 }
                 sb.append("</div>\n");
 
                 for (QuestionEntity q : questions) {
+                    if (!q.isIncludedInPaper()) continue;
                     sb.append("<div class=\"question-container\">\n");
                     sb.append("  <div class=\"q-text\">Q").append(qCounter++).append(". [")
                             .append(q.getMarks()).append(" Mark(s)] ")

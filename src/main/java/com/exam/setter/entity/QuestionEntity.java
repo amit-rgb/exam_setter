@@ -53,6 +53,10 @@ public class QuestionEntity {
     @Column(nullable = false)
     private ModerationStatus moderationStatus;
 
+    @Column(nullable = false, columnDefinition = "boolean default false")
+    @Builder.Default
+    private boolean includedInPaper = false;
+
     // Single Reviewer Audit Fields
     private String reviewerId;
     private String reviewerComments;

@@ -34,6 +34,7 @@ public class ExamPaperService {
      */
     @Transactional
     public ExamPaperEntity assembleAndPersistExamPaper(ExamPaperBlueprintRequest request) {
+        validateBlueprint(request);
         int computedTotalMarks = 0;
 
         ExamPaperEntity paperEntity = ExamPaperEntity.builder()
@@ -95,6 +96,21 @@ public class ExamPaperService {
 
         // 3. Persist cascade tree: ExamPaper -> ExamSections -> Questions
         return examPaperRepository.save(paperEntity);
+    }
+
+    private void validateBlueprint(ExamPaperBlueprintRequest request) {
+        int requestedQuestionCount = request.sections().stream()
+                .mapToInt(SectionBlueprint::questionCount)
+                .sum();
+
+        if (requestedQuestionCount > 100) {
+            throw new IllegalArgumentException("A single paper may request at most 100 questions.");
+        }
+
+        if (request.sections().stream().anyMatch(section ->
+                "MIXED".equalsIgnoreCase(section.difficulty()) || section.difficulty().length() > 20)) {
+            throw new IllegalArgumentException("Unsupported difficulty value.");
+        }
     }
 
     @Transactional

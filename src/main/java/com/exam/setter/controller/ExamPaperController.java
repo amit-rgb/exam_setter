@@ -39,6 +39,13 @@ public class ExamPaperController {
         return ResponseEntity.ok(savedPaper);
     }
 
+    @PutMapping("/{paperId}/selection")
+    public ResponseEntity<ExamPaperEntity> updateQuestionSelection(
+            @PathVariable UUID paperId,
+            @RequestBody com.exam.setter.dto.QuestionSelectionRequest request) {
+        return ResponseEntity.ok(examPaperService.updateQuestionSelection(paperId, request.includedQuestionIds()));
+    }
+
     @GetMapping(value = "/{paperId}/export/pdf", produces = MediaType.APPLICATION_PDF_VALUE)
     public ResponseEntity<byte[]> exportPaperToPdf(
             @PathVariable UUID paperId,

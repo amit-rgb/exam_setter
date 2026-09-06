@@ -25,6 +25,7 @@ spring:
   jpa:
     hibernate:
       ddl-auto: update
+    # New non-null columns are introduced with a safe database default/migration.
     show-sql: false
     properties:
       hibernate:

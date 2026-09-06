@@ -9,6 +9,7 @@ import com.exam.setter.service.OpenHtmlToPdfService;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 
 import java.io.IOException;
@@ -34,7 +35,7 @@ public class ExamPaperController {
     }
 
     @PostMapping("/assemble")
-    public ResponseEntity<ExamPaperEntity> assemblePaper(@RequestBody ExamPaperBlueprintRequest request) {
+    public ResponseEntity<ExamPaperEntity> assemblePaper(@Valid @RequestBody ExamPaperBlueprintRequest request) {
         ExamPaperEntity savedPaper = examPaperService.assembleAndPersistExamPaper(request);
         return ResponseEntity.ok(savedPaper);
     }

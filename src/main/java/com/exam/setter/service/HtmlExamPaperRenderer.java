@@ -82,6 +82,7 @@ public class HtmlExamPaperRenderer {
                 sb.append("</div>\n");
 
                 for (QuestionEntity q : questions) {
+                    if (!q.isIncludedInPaper()) continue;
                     sb.append("<div class=\"question-container\">\n");
                     sb.append("  <div class=\"q-text\">Q").append(qCounter++).append(". [")
                             .append(q.getMarks()).append(" Mark(s)] ")

@@ -4,6 +4,7 @@ import com.exam.setter.dto.GeneratedQuestion;
 import com.exam.setter.dto.QuestionGenerationRequest;
 import com.exam.setter.service.QuestionGeneratorService;
 import org.springframework.http.ResponseEntity;
+import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -20,7 +21,7 @@ public class QuestionController {
 
     @PostMapping("/generate")
     public ResponseEntity<List<GeneratedQuestion>> generateQuestions(
-            @RequestBody QuestionGenerationRequest request) {
+            @Valid @RequestBody QuestionGenerationRequest request) {
         List<GeneratedQuestion> questions = questionGeneratorService.generateQuestions(request);
         return ResponseEntity.ok(questions);
     }

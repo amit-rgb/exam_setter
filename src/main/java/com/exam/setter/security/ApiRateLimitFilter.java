@@ -38,7 +38,7 @@ public class ApiRateLimitFilter extends OncePerRequestFilter {
             response.setHeader("Retry-After", "3600");
             response.setContentType("application/json");
             response.getWriter().write(
-                    "{"status":"RATE_LIMITED","error":"Too many AI requests. Please try again later."}"
+                    "{\"status\":\"RATE_LIMITED\",\"error\":\"Too many AI requests. Please try again later.\"}"
             );
             return;
         }

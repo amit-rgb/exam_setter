@@ -95,6 +95,30 @@ public class ExamPaperService {
         return examPaperRepository.save(paperEntity);
     }
 
+    @Transactional
+    public ExamPaperEntity updateQuestionSelection(java.util.UUID paperId, java.util.List<java.util.UUID> includedQuestionIds) {
+        ExamPaperEntity paper = examPaperRepository.findById(paperId)
+                .orElseThrow(() -> new RuntimeException("Exam Paper not found: " + paperId));
+
+        java.util.Set<java.util.UUID> included = includedQuestionIds == null
+                ? java.util.Set.of()
+                : new java.util.HashSet<>(includedQuestionIds);
+
+        paper.getSections().forEach(section ->
+                section.getQuestions().forEach(question ->
+                        question.setIncludedInPaper(included.contains(question.getId()))
+                )
+        );
+
+        int selectedMarks = paper.getSections().stream()
+                .flatMap(section -> section.getQuestions().stream())
+                .filter(QuestionEntity::isIncludedInPaper)
+                .mapToInt(QuestionEntity::getMarks)
+                .sum();
+        paper.setTotalMarks(selectedMarks);
+        return examPaperRepository.save(paper);
+    }
+
     /**
      * Assemble an in-memory AssembledExamPaper DTO without persisting to the database.
      * This is used by endpoints that only need a generated preview/export.

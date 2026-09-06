@@ -8,6 +8,7 @@ import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 
 import java.util.List;
 import java.util.Map;
@@ -20,6 +21,7 @@ public class ExamPapperSetterApplication {
     }
 
     @Bean
+    @ConditionalOnProperty(name = "app.verification.enabled", havingValue = "true")
     CommandLineRunner verificationRunner(ChatClient.Builder chatClientBuilder, VectorStore vectorStore) {
         return args -> {
             System.out.println("\n--- STARTING HARDWARE & PIPELINE VERIFICATION ---");

@@ -21,6 +21,7 @@ import java.util.Map;
 public class PdfIngestionService {
 
     private static final Logger log = LoggerFactory.getLogger(PdfIngestionService.class);
+    private static final long MAX_FILE_SIZE_BYTES = 50L * 1024 * 1024;
     private final VectorStore vectorStore;
 
     public PdfIngestionService(VectorStore vectorStore) {
@@ -28,6 +29,7 @@ public class PdfIngestionService {
     }
 
     public int ingestPdfFile(MultipartFile file, String subject, String targetLevel, String sourceType) throws IOException {
+        validateUpload(file, subject, targetLevel, sourceType);
         log.info("Starting ingestion for: {} ({} bytes)", file.getOriginalFilename(), file.getSize());
 
         // Write to temp file to avoid byte array stream cache mismatch in PDFBox
@@ -64,5 +66,30 @@ public class PdfIngestionService {
 
         log.info("Successfully ingested {} chunks from {}", enrichedDocs.size(), file.getOriginalFilename());
         return enrichedDocs.size();
+    }
+
+    private void validateUpload(MultipartFile file, String subject, String targetLevel, String sourceType) {
+        if (file == null || file.isEmpty()) {
+            throw new IllegalArgumentException("A PDF file is required.");
+        }
+        if (file.getSize() > MAX_FILE_SIZE_BYTES) {
+            throw new IllegalArgumentException("PDF file must be 50 MB or smaller.");
+        }
+        String fileName = file.getOriginalFilename();
+        if (fileName == null || !fileName.toLowerCase().endsWith(".pdf")) {
+            throw new IllegalArgumentException("Only PDF files are supported.");
+        }
+        if (file.getContentType() != null && !"application/pdf".equalsIgnoreCase(file.getContentType())) {
+            throw new IllegalArgumentException("The uploaded file must have content type application/pdf.");
+        }
+        if (subject == null || subject.isBlank() || subject.length() > 100) {
+            throw new IllegalArgumentException("Subject is required and must be at most 100 characters.");
+        }
+        if (targetLevel == null || targetLevel.isBlank() || targetLevel.length() > 50) {
+            throw new IllegalArgumentException("Target level is required and must be at most 50 characters.");
+        }
+        if (sourceType == null || sourceType.isBlank() || sourceType.length() > 50) {
+            throw new IllegalArgumentException("Source type is required and must be at most 50 characters.");
+        }
     }
 }

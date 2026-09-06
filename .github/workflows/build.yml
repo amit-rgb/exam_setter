@@ -17,7 +17,7 @@ jobs:
         image: pgvector/pgvector:pg16
         env:
           POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: January@2020
+          POSTGRES_PASSWORD: ci-postgres-password
           POSTGRES_DB: exambank_db
         ports:
           - 5432:5432
@@ -30,8 +30,11 @@ jobs:
     env:
       SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/exambank_db
       SPRING_DATASOURCE_USERNAME: postgres
-      SPRING_DATASOURCE_PASSWORD: January@2020
+      SPRING_DATASOURCE_PASSWORD: ci-postgres-password
       OPENAI_API_KEY: ci-test-key
+      APP_AUTH_USERNAME: ci-expert
+      APP_AUTH_PASSWORD: ci-auth-password
+      APP_VERIFICATION_ENABLED: false
 
     steps:
       - name: Checkout

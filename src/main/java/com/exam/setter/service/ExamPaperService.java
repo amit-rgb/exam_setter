@@ -107,10 +107,6 @@ public class ExamPaperService {
             throw new IllegalArgumentException("A single paper may request at most 100 questions.");
         }
 
-        if (request.sections().stream().anyMatch(section ->
-                "MIXED".equalsIgnoreCase(section.difficulty()) || section.difficulty().length() > 20)) {
-            throw new IllegalArgumentException("Unsupported difficulty value.");
-        }
     }
 
     @Transactional

@@ -80,6 +80,7 @@ public class ExamPaperService {
                             .marks(gq.marks())
                             .topic(gq.topic())
                             .moderationStatus(ModerationStatus.PENDING_REVIEW)
+                            .includedInPaper(true)
                             .build()
             ).toList();
 

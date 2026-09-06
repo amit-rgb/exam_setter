@@ -136,8 +136,8 @@
                 <div class="flex flex-wrap gap-2 justify-center">
                     <button type="button" onclick="setAllQuestions(true)" class="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2.5 px-4 rounded-lg text-xs transition">✓ Opt In All</button>
                     <button type="button" onclick="setAllQuestions(false)" class="bg-rose-600 hover:bg-rose-700 text-white font-semibold py-2.5 px-4 rounded-lg text-xs transition">✕ Opt Out All</button>
-                    <button type="button" onclick="saveReviewAndDownload(false)" class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2.5 px-4 rounded-lg text-xs transition">📄 Generate Student PDF</button>
-                    <button type="button" onclick="saveReviewAndDownload(true)" class="bg-slate-800 hover:bg-slate-900 text-white font-semibold py-2.5 px-4 rounded-lg text-xs transition">📘 Generate Solutions PDF</button>
+                    <button type="button" onclick="saveReviewAndDownload(false, this)" class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2.5 px-4 rounded-lg text-xs transition">📄 Generate Student PDF</button>
+                    <button type="button" onclick="saveReviewAndDownload(true, this)" class="bg-slate-800 hover:bg-slate-900 text-white font-semibold py-2.5 px-4 rounded-lg text-xs transition">📘 Generate Solutions PDF</button>
                 </div>
             </div>
         </div>
@@ -235,7 +235,7 @@
     function createQuestionCard(q, index) {
       const card = document.createElement('div');
       card.className = 'border-t border-slate-200';
-      const included = q.moderationStatus === 'APPROVED';
+      const included = q.includedInPaper === true;
       card.innerHTML = `
         <div class="flex items-center gap-2 p-3 cursor-pointer hover:bg-slate-50" onclick="toggleQuestion(this.closest('.question-card'))">
           <span class="question-chevron text-slate-400">▸</span>
@@ -299,12 +299,11 @@
       document.getElementById('reviewBottomSummary').textContent = text;
     }
 
-    async function saveReviewAndDownload(includeSolutions) {
+    async function saveReviewAndDownload(includeSolutions, button) {
       if (!activePaperId) return;
       const cards = Array.from(document.querySelectorAll('.question-card'));
       const includedIds = cards.filter(c => c.dataset.included === 'true').map(c => c.dataset.questionId);
       if (includedIds.length === 0) { showAlert('Please opt in at least one question before generating the PDF.', true); return; }
-      const button = event?.currentTarget;
       if (button) { button.disabled = true; button.textContent = 'Preparing PDF...'; }
       try {
         const res = await fetch(`/api/exam-papers/${activePaperId}/selection`, {

@@ -55,7 +55,7 @@ public class QuestionEntity {
 
     @Column(nullable = false)
     @Builder.Default
-    private boolean includedInPaper = true;
+    private boolean includedInPaper = false;
 
     // Single Reviewer Audit Fields
     private String reviewerId;

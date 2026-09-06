@@ -118,6 +118,15 @@ public class ExamPaperService {
                 .mapToInt(QuestionEntity::getMarks)
                 .sum();
         paper.setTotalMarks(selectedMarks);
+
+        paper.getSections().forEach(section -> {
+            int sectionMarks = section.getQuestions().stream()
+                    .filter(QuestionEntity::isIncludedInPaper)
+                    .mapToInt(QuestionEntity::getMarks)
+                    .sum();
+            section.setSectionMarks(sectionMarks);
+        });
+
         return examPaperRepository.save(paper);
     }
 

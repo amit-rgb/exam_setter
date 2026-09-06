@@ -103,8 +103,8 @@ public class ExamPaperService {
                 .orElseThrow(() -> new RuntimeException("Exam Paper not found: " + paperId));
 
         java.util.Set<java.util.UUID> included = includedQuestionIds == null
-                ? java.util.Set.of()
-                : new java.util.HashSet<>(includedQuestionIds);
+                ? Set.of()
+                : new new HashSet<>(includedQuestionIds);
 
         paper.getSections().forEach(section ->
                 section.getQuestions().forEach(question ->

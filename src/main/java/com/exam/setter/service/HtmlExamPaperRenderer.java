@@ -73,9 +73,20 @@ public class HtmlExamPaperRenderer {
                     continue;
                 }
 
+                long selectedQuestionCount = questions.stream()
+                        .filter(QuestionEntity::isIncludedInPaper)
+                        .count();
+                if (selectedQuestionCount == 0) {
+                    continue;
+                }
+                int selectedSectionMarks = questions.stream()
+                        .filter(QuestionEntity::isIncludedInPaper)
+                        .mapToInt(QuestionEntity::getMarks)
+                        .sum();
+
                 sb.append("<div class=\"section-title\">\n");
                 sb.append("  <span>").append(escapeXml(section.getSectionName())).append("</span>\n");
-                sb.append("  <span style=\"float: right;\">[Section Marks: ").append(section.getSectionMarks()).append("]</span>\n");
+                sb.append("  <span style=\"float: right;\">[Section Marks: ").append(selectedSectionMarks).append("]</span>\n");
                 if (section.getNegativeMarks() > 0) {
                     sb.append("  <span class=\"neg-mark\">(Negative Marking: -").append(section.getNegativeMarks()).append(")</span>\n");
                 }

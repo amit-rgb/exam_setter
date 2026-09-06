@@ -104,7 +104,7 @@ public class ExamPaperService {
 
         java.util.Set<java.util.UUID> included = includedQuestionIds == null
                 ? Set.of()
-                : new new HashSet<>(includedQuestionIds);
+                : new HashSet<>(includedQuestionIds);
 
         paper.getSections().forEach(section ->
                 section.getQuestions().forEach(question ->

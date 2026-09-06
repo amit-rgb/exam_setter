@@ -115,21 +115,31 @@
         </form>
     </section>
 
-    <!-- Step 3: Direct Download Actions -->
-    <section id="downloadSection" class="hidden bg-emerald-50 border border-emerald-200 p-5 sm:p-6 rounded-xl shadow-sm text-center space-y-4">
-        <div>
-            <span class="inline-block bg-emerald-600 text-white text-[11px] font-bold px-3 py-1 rounded-full mb-2 uppercase tracking-wide">Paper Ready!</span>
-            <h3 id="generatedPaperTitle" class="text-base sm:text-lg font-bold text-slate-800">Exam Title</h3>
-            <p id="generatedPaperMeta" class="text-xs text-slate-600 mt-0.5">Total Marks: 0 | Duration: 45 min</p>
+    <!-- Step 3: Expert Question Review -->
+    <section id="reviewSection" class="hidden bg-white border border-slate-200 p-4 sm:p-6 rounded-xl shadow-sm">
+        <div class="flex flex-col sm:flex-row justify-between sm:items-center gap-3 mb-4">
+            <div>
+                <div class="flex items-center gap-2">
+                    <span class="flex items-center justify-center w-5 h-5 rounded-full bg-amber-100 text-amber-700 text-xs font-bold">3</span>
+                    <h2 class="text-sm sm:text-base font-bold text-slate-800">Expert Question Review</h2>
+                </div>
+                <p class="text-xs text-slate-500 pl-7 mt-1">Review each generated question and choose whether it should appear in the printed paper.</p>
+            </div>
+            <div id="reviewSummary" class="text-xs font-bold text-slate-700 bg-slate-100 px-3 py-2 rounded-lg"></div>
         </div>
 
-        <div class="flex flex-col sm:flex-row justify-center gap-3 pt-1">
-            <button onclick="downloadPdf(false)" class="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-semibold py-3 px-6 rounded-lg text-xs sm:text-sm shadow transition flex items-center justify-center gap-2">
-                <span>📄</span> Download Student PDF
-            </button>
-            <button onclick="downloadPdf(true)" class="w-full sm:w-auto bg-slate-800 hover:bg-slate-900 active:scale-95 text-white font-semibold py-3 px-6 rounded-lg text-xs sm:text-sm shadow transition flex items-center justify-center gap-2">
-                <span>📘</span> Download Solutions PDF
-            </button>
+        <div id="reviewSections" class="space-y-4"></div>
+
+        <div class="sticky bottom-3 mt-5 p-3 sm:p-4 bg-white/95 backdrop-blur border border-slate-200 rounded-xl shadow-lg">
+            <div class="flex flex-col sm:flex-row justify-between gap-3 items-center">
+                <div id="reviewBottomSummary" class="text-xs text-slate-600 font-semibold"></div>
+                <div class="flex flex-wrap gap-2 justify-center">
+                    <button type="button" onclick="setAllQuestions(true)" class="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2.5 px-4 rounded-lg text-xs transition">✓ Opt In All</button>
+                    <button type="button" onclick="setAllQuestions(false)" class="bg-rose-600 hover:bg-rose-700 text-white font-semibold py-2.5 px-4 rounded-lg text-xs transition">✕ Opt Out All</button>
+                    <button type="button" onclick="saveReviewAndDownload(false)" class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2.5 px-4 rounded-lg text-xs transition">📄 Generate Student PDF</button>
+                    <button type="button" onclick="saveReviewAndDownload(true)" class="bg-slate-800 hover:bg-slate-900 text-white font-semibold py-2.5 px-4 rounded-lg text-xs transition">📘 Generate Solutions PDF</button>
+                </div>
+            </div>
         </div>
     </section>
 
@@ -141,9 +151,7 @@
     function showAlert(msg, isError = false) {
       const box = document.getElementById('alertBox');
       box.textContent = msg;
-      box.className = `p-3.5 rounded-xl text-xs sm:text-sm font-semibold transition border shadow-sm ${
-        isError ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'
-      }`;
+      box.className = `p-3.5 rounded-xl text-xs sm:text-sm font-semibold transition border shadow-sm ${isError ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`;
       box.classList.remove('hidden');
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
@@ -151,100 +159,36 @@
     function addSectionRow(name = "Section A: Conceptual MCQs", type = "MCQ", count = 3, marks = 4, neg = 1.0, diff = "EASY") {
       const container = document.getElementById('sectionsContainer');
       const div = document.createElement('div');
-
-      // Responsive layout: full card on mobile/tablet, single-line row on desktop
       div.className = "section-row p-3.5 bg-slate-50 border border-slate-200 rounded-lg shadow-sm grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-12 gap-2.5 items-center text-xs";
-
       div.innerHTML = `
-        <!-- Section Title -->
-        <div class="col-span-2 sm:col-span-4 lg:col-span-4">
-          <label class="block lg:hidden text-[11px] font-bold text-slate-500 mb-1 uppercase">Section Title</label>
-          <input type="text" class="sec-name w-full border border-slate-300 rounded-lg p-2 text-xs outline-none focus:ring-1 focus:ring-indigo-500 bg-white" value="${name}" placeholder="Section Title" required />
-        </div>
-
-        <!-- Question Type -->
-        <div class="col-span-1 sm:col-span-2 lg:col-span-2">
-          <label class="block lg:hidden text-[11px] font-bold text-slate-500 mb-1 uppercase">Type</label>
-          <select class="sec-type w-full border border-slate-300 rounded-lg p-2 text-xs bg-white outline-none focus:ring-1 focus:ring-indigo-500">
-            <option value="MCQ" ${type === 'MCQ' ? 'selected' : ''}>MCQ</option>
-            <option value="NUMERICAL" ${type === 'NUMERICAL' ? 'selected' : ''}>NUMERICAL</option>
-            <option value="DESCRIPTIVE" ${type === 'DESCRIPTIVE' ? 'selected' : ''}>DESCRIPTIVE</option>
-          </select>
-        </div>
-
-        <!-- Number of Questions -->
-        <div class="col-span-1 sm:col-span-2 lg:col-span-2">
-          <label class="block lg:hidden text-[11px] font-bold text-slate-500 mb-1 uppercase">Count</label>
-          <input type="number" class="sec-count w-full border border-slate-300 rounded-lg p-2 text-xs text-center outline-none focus:ring-1 focus:ring-indigo-500 bg-white" value="${count}" min="1" max="50" required />
-        </div>
-
-        <!-- Positive Marks -->
-        <div class="col-span-1 sm:col-span-1 lg:col-span-1">
-          <label class="block lg:hidden text-[11px] font-bold text-slate-500 mb-1 uppercase">Marks (+)</label>
-          <input type="number" class="sec-marks w-full border border-slate-300 rounded-lg p-2 text-xs text-center outline-none focus:ring-1 focus:ring-indigo-500 bg-white" value="${marks}" min="1" required />
-        </div>
-
-        <!-- Negative Marks -->
-        <div class="col-span-1 sm:col-span-1 lg:col-span-1">
-          <label class="block lg:hidden text-[11px] font-bold text-slate-500 mb-1 uppercase">Neg (-)</label>
-          <input type="number" step="0.25" class="sec-neg w-full border border-slate-300 rounded-lg p-2 text-xs text-center outline-none focus:ring-1 focus:ring-indigo-500 bg-white" value="${neg}" min="0" required />
-        </div>
-
-        <!-- Difficulty & Remove -->
-        <div class="col-span-2 sm:col-span-2 lg:col-span-2 flex items-center gap-2">
-          <div class="flex-1">
-            <label class="block lg:hidden text-[11px] font-bold text-slate-500 mb-1 uppercase">Difficulty</label>
-            <select class="sec-diff w-full border border-slate-300 rounded-lg p-2 text-xs bg-white outline-none focus:ring-1 focus:ring-indigo-500">
-              <option value="EASY" ${diff === 'EASY' ? 'selected' : ''}>EASY</option>
-              <option value="MEDIUM" ${diff === 'MEDIUM' ? 'selected' : ''}>MEDIUM</option>
-              <option value="HARD" ${diff === 'HARD' ? 'selected' : ''}>HARD</option>
-            </select>
-          </div>
-          <div class="flex flex-col items-center">
-            <span class="block lg:hidden text-[10px] text-transparent mb-1">-</span>
-            <button type="button" title="Delete section" onclick="this.closest('.section-row').remove()" class="text-slate-400 hover:text-rose-600 active:scale-90 font-bold p-2 text-sm transition">
-              ✕
-            </button>
-          </div>
-        </div>
-      `;
+        <div class="col-span-2 sm:col-span-4 lg:col-span-4"><label class="block lg:hidden text-[11px] font-bold text-slate-500 mb-1 uppercase">Section Title</label><input type="text" class="sec-name w-full border border-slate-300 rounded-lg p-2 text-xs outline-none focus:ring-1 focus:ring-indigo-500 bg-white" value="${name}" placeholder="Section Title" required /></div>
+        <div class="col-span-1 sm:col-span-2 lg:col-span-2"><label class="block lg:hidden text-[11px] font-bold text-slate-500 mb-1 uppercase">Type</label><select class="sec-type w-full border border-slate-300 rounded-lg p-2 text-xs bg-white"><option value="MCQ" ${type === 'MCQ' ? 'selected' : ''}>MCQ</option><option value="NUMERICAL" ${type === 'NUMERICAL' ? 'selected' : ''}>NUMERICAL</option><option value="DESCRIPTIVE" ${type === 'DESCRIPTIVE' ? 'selected' : ''}>DESCRIPTIVE</option></select></div>
+        <div class="col-span-1 sm:col-span-2 lg:col-span-2"><label class="block lg:hidden text-[11px] font-bold text-slate-500 mb-1 uppercase">Count</label><input type="number" class="sec-count w-full border border-slate-300 rounded-lg p-2 text-xs text-center" value="${count}" min="1" max="50" required /></div>
+        <div class="col-span-1 sm:col-span-1 lg:col-span-1"><label class="block lg:hidden text-[11px] font-bold text-slate-500 mb-1 uppercase">Marks (+)</label><input type="number" class="sec-marks w-full border border-slate-300 rounded-lg p-2 text-xs text-center" value="${marks}" min="1" required /></div>
+        <div class="col-span-1 sm:col-span-1 lg:col-span-1"><label class="block lg:hidden text-[11px] font-bold text-slate-500 mb-1 uppercase">Neg (-)</label><input type="number" step="0.25" class="sec-neg w-full border border-slate-300 rounded-lg p-2 text-xs text-center" value="${neg}" min="0" required /></div>
+        <div class="col-span-2 sm:col-span-2 lg:col-span-2 flex items-center gap-2"><div class="flex-1"><label class="block lg:hidden text-[11px] font-bold text-slate-500 mb-1 uppercase">Difficulty</label><select class="sec-diff w-full border border-slate-300 rounded-lg p-2 text-xs bg-white"><option value="EASY" ${diff === 'EASY' ? 'selected' : ''}>EASY</option><option value="MEDIUM" ${diff === 'MEDIUM' ? 'selected' : ''}>MEDIUM</option><option value="HARD" ${diff === 'HARD' ? 'selected' : ''}>HARD</option></select></div><button type="button" onclick="this.closest('.section-row').remove()" class="text-slate-400 hover:text-rose-600 font-bold p-2">✕</button></div>`;
       container.appendChild(div);
     }
 
     async function handleIngest(e) {
       e.preventDefault();
-      const btn = document.getElementById('ingestBtn');
-      btn.disabled = true;
-      btn.textContent = "Ingesting...";
-
+      const btn = document.getElementById('ingestBtn'); btn.disabled = true; btn.textContent = "Ingesting...";
       const formData = new FormData();
       formData.append('file', document.getElementById('ingestFile').files[0]);
       formData.append('subject', document.getElementById('ingestSubject').value);
       formData.append('targetLevel', document.getElementById('ingestLevel').value);
-
       try {
         const res = await fetch('/api/ingest/pdf', { method: 'POST', body: formData });
         const data = await res.json();
-        if (res.ok) {
-          showAlert(`Indexed ${data.indexedChunks} chunks from ${data.fileName}`);
-          document.getElementById('ingestFile').value = "";
-        } else {
-          showAlert(data.error || 'Ingestion failed', true);
-        }
-      } catch (err) {
-        showAlert(err.message, true);
-      } finally {
-        btn.disabled = false;
-        btn.textContent = "Upload & Index";
-      }
+        if (res.ok) { showAlert(`Indexed ${data.indexedChunks} chunks from ${data.fileName}`); document.getElementById('ingestFile').value = ""; }
+        else showAlert(data.error || 'Ingestion failed', true);
+      } catch (err) { showAlert(err.message, true); }
+      finally { btn.disabled = false; btn.textContent = "Upload & Index"; }
     }
 
     async function handleAssemble(e) {
       e.preventDefault();
-      const btn = document.getElementById('assembleBtn');
-      btn.disabled = true;
-      btn.textContent = "Generating Paper (Please wait)...";
-
+      const btn = document.getElementById('assembleBtn'); btn.disabled = true; btn.textContent = "Generating Questions (Please wait)...";
       const sections = Array.from(document.querySelectorAll('.section-row')).map(row => ({
         sectionName: row.querySelector('.sec-name').value,
         questionType: row.querySelector('.sec-type').value,
@@ -253,48 +197,131 @@
         negativeMarks: parseFloat(row.querySelector('.sec-neg').value),
         difficulty: row.querySelector('.sec-diff').value
       }));
-
-      const payload = {
-        examTitle: document.getElementById('examTitle').value,
-        subject: document.getElementById('blueprintSubject').value,
-        targetLevels: document.getElementById('blueprintLevels').value.split(',').map(s => s.trim()),
-        durationMinutes: parseInt(document.getElementById('examDuration').value),
-        sections: sections
-      };
-
+      const payload = { examTitle: document.getElementById('examTitle').value, subject: document.getElementById('blueprintSubject').value, targetLevels: document.getElementById('blueprintLevels').value.split(',').map(s => s.trim()), durationMinutes: parseInt(document.getElementById('examDuration').value), sections };
       try {
-        const res = await fetch('/api/exam-papers/assemble', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
+        const res = await fetch('/api/exam-papers/assemble', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
         const paper = await res.json();
         if (res.ok) {
           activePaperId = paper.id;
-          document.getElementById('generatedPaperTitle').textContent = paper.title;
-          document.getElementById('generatedPaperMeta').textContent = `Subject: ${paper.subject.toUpperCase()} | Total Marks: ${paper.totalMarks} | Duration: ${paper.durationMinutes} min`;
-          document.getElementById('downloadSection').classList.remove('hidden');
-          showAlert("Exam paper generated successfully!");
-          document.getElementById('downloadSection').scrollIntoView({ behavior: 'smooth' });
-        } else {
-          showAlert(paper.error || 'Generation failed', true);
-        }
-      } catch (err) {
-        showAlert(err.message, true);
-      } finally {
-        btn.disabled = false;
-        btn.textContent = "Generate Exam Paper";
-      }
+          renderReview(paper);
+          document.getElementById('reviewSection').classList.remove('hidden');
+          showAlert("Questions generated. Please review and opt in the questions you want to print.");
+          document.getElementById('reviewSection').scrollIntoView({ behavior: 'smooth' });
+        } else showAlert(paper.error || 'Generation failed', true);
+      } catch (err) { showAlert(err.message, true); }
+      finally { btn.disabled = false; btn.textContent = "Generate Exam Paper"; }
     }
 
-    function downloadPdf(includeSolutions) {
+    function renderReview(paper) {
+      const container = document.getElementById('reviewSections');
+      container.innerHTML = '';
+      (paper.sections || []).forEach((section, sectionIndex) => {
+        const sectionEl = document.createElement('div');
+        sectionEl.className = 'border border-slate-200 rounded-xl overflow-hidden';
+        const selected = (section.questions || []).length;
+        sectionEl.innerHTML = `
+          <div class="bg-slate-100 px-4 py-3 flex justify-between items-center">
+            <div><span class="font-bold text-sm">${escapeHtml(section.sectionName)}</span><span class="text-xs text-slate-500 ml-2">(${selected} questions)</span></div>
+            <span class="text-xs font-semibold text-slate-500">Section ${sectionIndex + 1}</span>
+          </div>
+          <div class="question-list"></div>`;
+        const list = sectionEl.querySelector('.question-list');
+        (section.questions || []).forEach((q, index) => list.appendChild(createQuestionCard(q, index)));
+        container.appendChild(sectionEl);
+      });
+      updateReviewSummary();
+    }
+
+    function createQuestionCard(q, index) {
+      const card = document.createElement('div');
+      card.className = 'border-t border-slate-200';
+      const included = q.moderationStatus === 'APPROVED';
+      card.innerHTML = `
+        <div class="flex items-center gap-2 p-3 cursor-pointer hover:bg-slate-50" onclick="toggleQuestion(this.closest('.question-card'))">
+          <span class="question-chevron text-slate-400">▸</span>
+          <span class="font-bold text-xs sm:text-sm flex-1">Q${index + 1}. ${escapeHtml(q.questionText || '')}</span>
+          <span class="selection-status text-[10px] font-bold px-2 py-1 rounded-full"></span>
+          <div class="flex gap-1" onclick="event.stopPropagation()">
+            <button type="button" class="opt-in-btn px-2.5 py-1.5 rounded-lg text-[10px] font-bold" onclick="setQuestionSelection(this.closest('.question-card'), true)">✓ Opt In</button>
+            <button type="button" class="opt-out-btn px-2.5 py-1.5 rounded-lg text-[10px] font-bold" onclick="setQuestionSelection(this.closest('.question-card'), false)">✕ Opt Out</button>
+          </div>
+        </div>
+        <div class="question-details hidden px-4 pb-4 bg-slate-50">
+          <div class="pt-3 space-y-3 text-xs">
+            <div><span class="font-bold">Question:</span><div class="mt-1 whitespace-pre-wrap">${escapeHtml(q.questionText || '')}</div></div>
+            ${(q.options || []).length ? '<div><span class="font-bold">Options:</span><ol class="list-[upper-alpha] ml-6 mt-1 space-y-1">' + q.options.map(o => '<li>' + escapeHtml(o) + '</li>').join('') + '</ol></div>' : ''}
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2"><div><b>Answer:</b> ${escapeHtml(q.correctAnswer || '')}</div><div><b>Marks:</b> ${q.marks ?? ''}</div><div><b>Difficulty:</b> ${escapeHtml(q.difficulty || '')}</div><div><b>Topic:</b> ${escapeHtml(q.topic || '')}</div></div>
+            <div><b>Explanation:</b><div class="mt-1 whitespace-pre-wrap">${escapeHtml(q.explanation || '')}</div></div>
+          </div>
+        </div>`;
+      card.classList.add('question-card');
+      card.dataset.questionId = q.id;
+      card.dataset.included = included ? 'true' : 'false';
+      updateQuestionCardVisual(card);
+      return card;
+    }
+
+    function toggleQuestion(card) {
+      const details = card.querySelector('.question-details');
+      details.classList.toggle('hidden');
+      card.querySelector('.question-chevron').textContent = details.classList.contains('hidden') ? '▸' : '▾';
+    }
+
+    function setQuestionSelection(card, included) {
+      card.dataset.included = included ? 'true' : 'false';
+      updateQuestionCardVisual(card);
+      updateReviewSummary();
+    }
+
+    function updateQuestionCardVisual(card) {
+      const included = card.dataset.included === 'true';
+      const status = card.querySelector('.selection-status');
+      status.textContent = included ? 'OPTED IN' : 'OPTED OUT';
+      status.className = 'selection-status text-[10px] font-bold px-2 py-1 rounded-full ' + (included ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700');
+      card.querySelector('.opt-in-btn').className = 'opt-in-btn px-2.5 py-1.5 rounded-lg text-[10px] font-bold ' + (included ? 'bg-emerald-600 text-white' : 'bg-emerald-50 text-emerald-700 border border-emerald-200');
+      card.querySelector('.opt-out-btn').className = 'opt-out-btn px-2.5 py-1.5 rounded-lg text-[10px] font-bold ' + (!included ? 'bg-rose-600 text-white' : 'bg-rose-50 text-rose-700 border border-rose-200');
+    }
+
+    function setAllQuestions(included) {
+      document.querySelectorAll('.question-card').forEach(card => {
+        card.dataset.included = included ? 'true' : 'false';
+        updateQuestionCardVisual(card);
+      });
+      updateReviewSummary();
+    }
+
+    function updateReviewSummary() {
+      const cards = Array.from(document.querySelectorAll('.question-card'));
+      const selected = cards.filter(c => c.dataset.included === 'true').length;
+      const total = cards.length;
+      const text = `${selected} of ${total} questions selected for printing`;
+      document.getElementById('reviewSummary').textContent = text;
+      document.getElementById('reviewBottomSummary').textContent = text;
+    }
+
+    async function saveReviewAndDownload(includeSolutions) {
       if (!activePaperId) return;
-      window.open(`/api/exam-papers/${activePaperId}/export/pdf?includeSolutions=${includeSolutions}`, '_blank');
+      const cards = Array.from(document.querySelectorAll('.question-card'));
+      const includedIds = cards.filter(c => c.dataset.included === 'true').map(c => c.dataset.questionId);
+      if (includedIds.length === 0) { showAlert('Please opt in at least one question before generating the PDF.', true); return; }
+      const button = event?.currentTarget;
+      if (button) { button.disabled = true; button.textContent = 'Preparing PDF...'; }
+      try {
+        const res = await fetch(`/api/exam-papers/${activePaperId}/selection`, {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ includedQuestionIds: includedIds })
+        });
+        const result = await res.json();
+        if (!res.ok) { showAlert(result.error || 'Could not save question selection', true); return; }
+        window.open(`/api/exam-papers/${activePaperId}/export/pdf?includeSolutions=${includeSolutions}`, '_blank');
+      } catch (err) { showAlert(err.message, true); }
+      finally { if (button) { button.disabled = false; button.textContent = includeSolutions ? '📘 Generate Solutions PDF' : '📄 Generate Student PDF'; } }
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
     }
 
     // Default template rows
     addSectionRow("Section A: Conceptual MCQs", "MCQ", 3, 4, 1.0, "EASY");
     addSectionRow("Section B: Numerical Problems", "NUMERICAL", 2, 4, 0.0, "MEDIUM");
-</script>
-</body>
-</html>

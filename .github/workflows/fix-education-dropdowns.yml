@@ -2,14 +2,14 @@ name: Repair education dropdowns
 
 on:
   push:
-    branches: [ui/redesign-professional]
+    branches:
+      - ui/redesign-professional
 
 permissions:
   contents: write
 
 jobs:
   repair:
-    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

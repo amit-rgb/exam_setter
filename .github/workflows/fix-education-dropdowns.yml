@@ -1,0 +1,71 @@
+name: Repair education dropdowns
+
+on:
+  push:
+    branches: [ui/redesign-professional]
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ui/redesign-professional
+          fetch-depth: 0
+      - name: Patch dropdown rendering
+        shell: python
+        run: |
+          from pathlib import Path
+          p = Path('src/main/resources/static/index.html')
+          s = p.read_text(encoding='utf-8')
+          marker = '<script>\n(function(){\n  const subjects=[\n'
+          if marker in s:
+              print('Native dropdown patch already present')
+          else:
+              patch = r'''<script>
+(function(){
+  const subjects=[
+    ['English','english'],['Hindi','hindi'],['Mathematics','mathematics'],['Physics','physics'],['Chemistry','chemistry'],
+    ['Biology','biology'],['Science','science'],['Computer Science','computer_science'],['Social Science','social_science'],['Economics','economics']
+  ];
+  const levels=[['Class 3','CLASS_3'],['Class 4','CLASS_4'],['Class 5','CLASS_5'],['Class 6','CLASS_6'],['Class 7','CLASS_7'],['Class 8','CLASS_8'],['Class 9','CLASS_9'],['Class 10','CLASS_10'],['Class 11','CLASS_11'],['Class 12','CLASS_12']];
+  function makeSelect(id, hiddenId, items, multiple){
+    const host=document.getElementById(id), hidden=document.getElementById(hiddenId);
+    if(!host || !hidden) return;
+    const select=document.createElement('select');
+    select.id=id; select.name=id; select.multiple=!!multiple;
+    select.className='field w-full rounded-xl border border-slate-300 bg-slate-50 px-3.5 py-3 text-sm outline-none focus:border-indigo-500 focus:bg-white';
+    if(multiple) select.size=1;
+    const selected=String(hidden.value||'').split(',').map(v=>v.trim()).filter(Boolean);
+    items.forEach(([label,value])=>{
+      const o=document.createElement('option'); o.value=value; o.textContent=label; o.selected=selected.includes(value); select.appendChild(o);
+    });
+    function sync(){
+      hidden.value=multiple ? Array.from(select.selectedOptions).map(o=>o.value).join(',') : select.value;
+    }
+    select.addEventListener('change',sync);
+    host.replaceWith(select);
+    sync();
+  }
+  makeSelect('ingestSubjectSelect','ingestSubject',subjects,false);
+  makeSelect('ingestLevelSelect','ingestLevel',levels,false);
+  makeSelect('blueprintSubjectSelect','blueprintSubject',subjects,false);
+  makeSelect('blueprintLevelsSelect','blueprintLevels',levels,true);
+})();
+</script>
+'''
+              s=s.replace('</body></html>', patch+'</body></html>')
+              p.write_text(s,encoding='utf-8')
+      - name: Commit repair
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/main/resources/static/index.html
+          git diff --cached --quiet && exit 0
+          git commit -m "Make education dropdowns render reliably"
+          git push origin ui/redesign-professional

@@ -1,0 +1,45 @@
+name: Fix clickable workflow steps
+on:
+  push:
+    branches: [ui/redesign-professional]
+permissions:
+  contents: write
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ui/redesign-professional
+          fetch-depth: 0
+      - name: Patch app navigation
+        shell: python
+        run: |
+          from pathlib import Path
+          p=Path('src/main/resources/static/app.js')
+          s=p.read_text(encoding='utf-8')
+          old="function navigateWorkflow(target){const ctx=readContext(),paper=readPaper();if(target==='index.html'){location.href='index.html';return false;}if(target==='blueprint.html'){if(ctx.subject){location.href='blueprint.html';}else{location.href='index.html';setTimeout(()=>alertBox('Please ingest a textbook first. You can open Blueprint after the source material has been indexed.'),100); }return false;}if(target==='review.html'){if(paper){location.href='review.html';}else if(ctx.subject){location.href='blueprint.html';setTimeout(()=>alertBox('Please complete the Blueprint and generate the exam paper before opening Review.'),100);}else{location.href='index.html';setTimeout(()=>alertBox('Please ingest a textbook first. Review becomes available after Blueprint and question generation.'),100);}return false;}return false;}"
+          new="function navigateWorkflow(target){location.href=target;return false;}"
+          if old not in s: raise SystemExit('navigation function not found')
+          s=s.replace(old,new)
+          old2="function initBlueprintPage(){const form=document.getElementById('assembleForm');if(!form)return;const ctx=readContext();if(!ctx.subject){alertBox('Please ingest a textbook first.');setTimeout(()=>location.href='index.html',1200);return;}document.getElementById('blueprintSubject').value=ctx.subject;"
+          new2="function initBlueprintPage(){const form=document.getElementById('assembleForm');if(!form)return;const ctx=readContext();if(ctx.subject)document.getElementById('blueprintSubject').value=ctx.subject;"
+          if old2 not in s: raise SystemExit('blueprint guard not found')
+          s=s.replace(old2,new2)
+          old3="function initReviewPage(){const root=document.getElementById('reviewSections');if(!root)return;const paper=readPaper();if(!paper){const ctx=readContext();alertBox(ctx.subject?'Please complete the Blueprint and generate the exam paper before opening Review.':'Please ingest a textbook and complete the Blueprint before opening Review.',true);setTimeout(()=>location.href=ctx.subject?'blueprint.html':'index.html',1200);return;}document.getElementById('paperTitle').textContent=paper.examTitle||'Exam Paper';document.getElementById('paperMeta').textContent=`${paper.subject||''} · ${paper.durationMinutes||''} minutes`;root.innerHTML='';"
+          new3="function initReviewPage(){const root=document.getElementById('reviewSections');if(!root)return;const paper=readPaper();if(!paper){document.getElementById('paperTitle').textContent='Expert question review.';document.getElementById('paperMeta').textContent='No generated exam paper yet. Complete the Blueprint and generate a paper to populate this review workspace.';document.getElementById('summary').textContent='Awaiting generation';root.innerHTML='<section class=\"rounded-3xl border border-amber-200 bg-amber-50 p-8 shadow-card\"><div class=\"text-lg font-extrabold text-amber-900\">Review workspace is ready</div><p class=\"mt-2 max-w-2xl text-sm leading-6 text-amber-800\">This page remains open when you click Review. Generate an exam paper from Blueprint to load questions here.</p><a href=\"blueprint.html\" onclick=\"return navigateWorkflow(\\'blueprint.html\\')\" class=\"mt-5 inline-flex rounded-xl bg-slate-950 px-4 py-3 text-xs font-extrabold text-white\">Go to Blueprint →</a></section>';document.getElementById('selectAll').disabled=true;document.getElementById('clearAll').disabled=true;document.getElementById('saveStudent').disabled=true;document.getElementById('saveSolutions').disabled=true;return;}document.getElementById('paperTitle').textContent=paper.examTitle||'Exam Paper';document.getElementById('paperMeta').textContent=`${paper.subject||''} · ${paper.durationMinutes||''} minutes`;root.innerHTML='';"
+          if old3 not in s: raise SystemExit('review guard not found')
+          s=s.replace(old3,new3)
+          p.write_text(s,encoding='utf-8')
+      - name: Remove temporary workflow
+        run: rm -f .github/workflows/fix-clickable-steps.yml
+      - name: Commit
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/main/resources/static/app.js .github/workflows/fix-clickable-steps.yml
+          git diff --cached --quiet && exit 0
+          git commit -m "Make all workflow steps directly clickable"
+          git push origin ui/redesign-professional

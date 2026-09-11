@@ -39,93 +39,22 @@ function createSearchableSelect(containerId, hiddenId, options, initialValue, mu
   const container=document.getElementById(containerId);
   const hidden=document.getElementById(hiddenId);
   if(!container || !hidden) return;
-  const normalized=(Array.isArray(options)?options:[]).map((o,i)=>({
-    label:String(o?.label ?? o?.name ?? o?.title ?? o?.subject ?? o?.value ?? `Option ${i+1}`),
-    value:String(o?.value ?? o?.code ?? o?.id ?? o?.name ?? o?.label ?? `option_${i+1}`)
-  })).slice(0,10);
+  const normalized=(Array.isArray(options)?options:[]).map((o,i)=>({label:String(o?.label ?? o?.name ?? o?.title ?? o?.subject ?? o?.value ?? `Option ${i+1}`),value:String(o?.value ?? o?.code ?? o?.id ?? o?.name ?? o?.label ?? `option_${i+1}`)})).slice(0,10);
   const initial=String(hidden.value || initialValue || '').split(',').map(v=>v.trim()).filter(Boolean);
   const selected=new Set(initial);
-  container.innerHTML=`
-    <div class="relative" data-dropdown-root>
-      <button type="button" data-dropdown-trigger aria-haspopup="listbox" aria-expanded="false" class="field flex min-h-[46px] w-full items-center justify-between gap-3 rounded-xl border border-slate-300 bg-slate-50 px-3.5 py-3 text-left text-sm outline-none hover:bg-white focus:border-indigo-500 focus:bg-white">
-        <span data-dropdown-label class="min-w-0 truncate font-semibold text-slate-800"></span>
-        <span class="shrink-0 text-slate-400">⌄</span>
-      </button>
-      <div data-dropdown-menu class="absolute left-0 right-0 z-[100] mt-2 hidden overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 shadow-2xl">
-        <div class="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-          <span class="text-slate-400">⌕</span>
-          <input data-dropdown-search type="search" placeholder="Search..." autocomplete="off" class="w-full bg-transparent text-sm outline-none">
-        </div>
-        <div data-dropdown-options class="search-dropdown mt-2 space-y-1" role="listbox"></div>
-      </div>
-    </div>`;
-  const root=container.querySelector('[data-dropdown-root]');
-  const trigger=container.querySelector('[data-dropdown-trigger]');
-  const menu=container.querySelector('[data-dropdown-menu]');
-  const search=container.querySelector('[data-dropdown-search]');
-  const list=container.querySelector('[data-dropdown-options]');
-  const label=container.querySelector('[data-dropdown-label]');
+  container.innerHTML=`<div class="relative" data-dropdown-root><button type="button" data-dropdown-trigger aria-haspopup="listbox" aria-expanded="false" class="field flex min-h-[46px] w-full items-center justify-between gap-3 rounded-xl border border-slate-300 bg-slate-50 px-3.5 py-3 text-left text-sm outline-none hover:bg-white focus:border-indigo-500 focus:bg-white"><span data-dropdown-label class="min-w-0 truncate font-semibold text-slate-800"></span><span class="shrink-0 text-slate-400">⌄</span></button><div data-dropdown-menu class="absolute left-0 right-0 z-[100] mt-2 hidden overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 shadow-2xl"><div class="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"><span class="text-slate-400">⌕</span><input data-dropdown-search type="search" placeholder="Search..." autocomplete="off" class="w-full bg-transparent text-sm outline-none"></div><div data-dropdown-options class="search-dropdown mt-2 space-y-1" role="listbox"></div></div></div>`;
+  const trigger=container.querySelector('[data-dropdown-trigger]'),menu=container.querySelector('[data-dropdown-menu]'),search=container.querySelector('[data-dropdown-search]'),list=container.querySelector('[data-dropdown-options]'),label=container.querySelector('[data-dropdown-label]');
   let query='';
-  function esc(value){return escapeHtml(value);}
-  function updateLabel(){
-    const chosen=normalized.filter(o=>selected.has(o.value));
-    if(multiple) label.textContent=chosen.length?chosen.map(o=>o.label).join(', '):'Select target levels';
-    else label.textContent=chosen[0]?.label || 'Select an option';
-    hidden.value=[...selected].join(',');
-  }
-  function renderOptions(){
-    const q=query.trim().toLowerCase();
-    const filtered=normalized.filter(o=>o.label.toLowerCase().includes(q)||o.value.toLowerCase().includes(q));
-    list.innerHTML=filtered.length ? filtered.map(o=>{
-      const checked=selected.has(o.value);
-      return `<button type="button" data-option-value="${esc(o.value)}" class="search-option flex w-full items-center justify-between rounded-xl px-3 py-3 text-left text-xs font-bold ${checked?'bg-indigo-50 text-indigo-700':'text-slate-700'}"><span>${esc(o.label)}</span><span class="text-indigo-600">${checked?'✓':''}</span></button>`;
-    }).join('') : '<div class="px-3 py-4 text-center text-xs font-semibold text-slate-400">No matching option</div>';
-    list.querySelectorAll('[data-option-value]').forEach(option=>option.addEventListener('click',function(e){
-      e.preventDefault();
-      e.stopPropagation();
-      const value=this.dataset.optionValue;
-      if(multiple){
-        if(selected.has(value)) selected.delete(value); else selected.add(value);
-        query='';
-        search.value='';
-        updateLabel();
-        renderOptions();
-        search.focus();
-      }else{
-        selected.clear();
-        selected.add(value);
-        query='';
-        search.value='';
-        updateLabel();
-        close();
-      }
-    }));
-  }
-  function open(){
-    document.querySelectorAll('[data-searchable-select]').forEach(other=>{
-      if(other!==container){
-        const otherMenu=other.querySelector('[data-dropdown-menu]');
-        const otherTrigger=other.querySelector('[data-dropdown-trigger]');
-        if(otherMenu) otherMenu.classList.add('hidden');
-        if(otherTrigger) otherTrigger.setAttribute('aria-expanded','false');
-      }
-    });
-    menu.classList.remove('hidden');
-    trigger.setAttribute('aria-expanded','true');
-    renderOptions();
-    setTimeout(()=>search.focus(),0);
-  }
-  function close(){
-    menu.classList.add('hidden');
-    trigger.setAttribute('aria-expanded','false');
-  }
-  trigger.addEventListener('click',function(e){e.preventDefault();e.stopPropagation();menu.classList.contains('hidden')?open():close();});
+  function updateLabel(){const chosen=normalized.filter(o=>selected.has(o.value));label.textContent=multiple?(chosen.length?chosen.map(o=>o.label).join(', '):'Select target levels'):(chosen[0]?.label||'Select an option');hidden.value=[...selected].join(',');}
+  function renderOptions(){const q=query.trim().toLowerCase(),filtered=normalized.filter(o=>o.label.toLowerCase().includes(q)||o.value.toLowerCase().includes(q));list.innerHTML=filtered.length?filtered.map(o=>{const checked=selected.has(o.value);return `<button type="button" data-option-value="${escapeHtml(o.value)}" class="search-option flex w-full items-center justify-between rounded-xl px-3 py-3 text-left text-xs font-bold ${checked?'bg-indigo-50 text-indigo-700':'text-slate-700'}"><span>${escapeHtml(o.label)}</span><span class="text-indigo-600">${checked?'✓':''}</span></button>`}).join(''):'<div class="px-3 py-4 text-center text-xs font-semibold text-slate-400">No matching option</div>';list.querySelectorAll('[data-option-value]').forEach(option=>option.addEventListener('click',function(e){e.preventDefault();e.stopPropagation();const value=this.dataset.optionValue;if(multiple){if(selected.has(value))selected.delete(value);else selected.add(value);query='';search.value='';updateLabel();renderOptions();search.focus();}else{selected.clear();selected.add(value);query='';search.value='';updateLabel();close();}}));}
+  function open(){document.querySelectorAll('[data-searchable-select]').forEach(other=>{if(other!==container){const m=other.querySelector('[data-dropdown-menu]'),t=other.querySelector('[data-dropdown-trigger]');if(m)m.classList.add('hidden');if(t)t.setAttribute('aria-expanded','false');}});menu.classList.remove('hidden');trigger.setAttribute('aria-expanded','true');renderOptions();setTimeout(()=>search.focus(),0);}
+  function close(){menu.classList.add('hidden');trigger.setAttribute('aria-expanded','false');}
+  trigger.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();menu.classList.contains('hidden')?open():close();});
   menu.addEventListener('click',e=>e.stopPropagation());
-  search.addEventListener('input',function(){query=this.value;renderOptions();});
-  search.addEventListener('keydown',function(e){if(e.key==='Escape'){close();trigger.focus();}});
+  search.addEventListener('input',()=>{query=search.value;renderOptions();});
+  search.addEventListener('keydown',e=>{if(e.key==='Escape'){close();trigger.focus();}});
   container.dataset.searchableSelect='true';
-  updateLabel();
-  renderOptions();
+  updateLabel();renderOptions();
 }
 
 function initializeEducationControls(subjects, levels){
@@ -134,19 +63,10 @@ function initializeEducationControls(subjects, levels){
   createSearchableSelect('blueprintSubjectSelect','blueprintSubject',subjects,'chemistry');
   createSearchableSelect('blueprintLevelsSelect','blueprintLevels',levels,'CLASS_11',true);
 }
-
 async function loadEducationOptions(){
-  const subjects=fallbackOptions.subjects.slice(0,10);
-  const levels=fallbackOptions.targetLevels.slice(0,10);
+  const subjects=fallbackOptions.subjects.slice(0,10),levels=fallbackOptions.targetLevels.slice(0,10);
   initializeEducationControls(subjects,levels);
-  try{
-    const res=await fetch('/education-options.json',{cache:'no-store'});
-    if(!res.ok) throw new Error('Options request failed');
-    const data=await res.json();
-    const loadedSubjects=(Array.isArray(data.subjects)?data.subjects:[]).slice(0,10);
-    const loadedLevels=(Array.isArray(data.targetLevels)?data.targetLevels:[]).slice(0,10);
-    if(loadedSubjects.length===10 && loadedLevels.length===10) initializeEducationControls(loadedSubjects,loadedLevels);
-  }catch(err){console.warn('Using built-in education options',err);}
+  try{const res=await fetch('/education-options.json',{cache:'no-store'});if(!res.ok)throw new Error('Options request failed');const data=await res.json();const loadedSubjects=(Array.isArray(data.subjects)?data.subjects:[]).slice(0,10),loadedLevels=(Array.isArray(data.targetLevels)?data.targetLevels:[]).slice(0,10);if(loadedSubjects.length===10&&loadedLevels.length===10)initializeEducationControls(loadedSubjects,loadedLevels);}catch(err){console.warn('Using built-in education options',err);}
 }
 
 function addSectionRow(name='Section A: Conceptual MCQs',type='MCQ',count=3,marks=4,neg=1.0,diff='EASY'){const desktop=document.getElementById('sectionsContainer'),mobile=document.getElementById('sectionsContainerMobile'),id='section-'+Math.random().toString(36).slice(2);const html=`<div data-section-row="${id}" class="section-row grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 lg:grid-cols-12 lg:items-center lg:rounded-none lg:border-0 lg:border-t lg:px-4 lg:py-4"><div class="lg:col-span-4"><input type="text" class="sec-name field w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2.5 text-xs outline-none focus:border-indigo-500 focus:bg-white" value="${escapeHtml(name)}" required></div><div class="lg:col-span-2"><select class="sec-type field w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2.5 text-xs"><option value="MCQ" ${type==='MCQ'?'selected':''}>MCQ</option><option value="NUMERICAL" ${type==='NUMERICAL'?'selected':''}>NUMERICAL</option><option value="DESCRIPTIVE" ${type==='DESCRIPTIVE'?'selected':''}>DESCRIPTIVE</option></select></div><div class="lg:col-span-2"><input type="number" class="sec-count field w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2.5 text-xs text-center" value="${count}" min="1" max="50" required></div><div class="lg:col-span-1"><input type="number" class="sec-marks field w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2.5 text-xs text-center" value="${marks}" min="1" required></div><div class="lg:col-span-1"><input type="number" step="0.25" class="sec-neg field w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2.5 text-xs text-center" value="${neg}" min="0" required></div><div class="lg:col-span-2 flex gap-2"><select class="sec-diff field min-w-0 flex-1 rounded-xl border border-slate-300 bg-slate-50 px-3 py-2.5 text-xs"><option value="EASY" ${diff==='EASY'?'selected':''}>EASY</option><option value="MEDIUM" ${diff==='MEDIUM'?'selected':''}>MEDIUM</option><option value="HARD" ${diff==='HARD'?'selected':''}>HARD</option></select><button type="button" onclick="removeSectionRow('${id}')" class="rounded-xl border border-slate-200 px-3 text-xs font-black text-slate-400">✕</button></div></div>`;const wrapper=document.createElement('div');wrapper.innerHTML=html;const node=wrapper.firstElementChild;desktop.appendChild(node.cloneNode(true));mobile.appendChild(node.cloneNode(true));syncSectionRow(id);[desktop,mobile].forEach(root=>root.querySelector(`[data-section-row="${id}"]`).querySelectorAll('input,select').forEach(el=>el.addEventListener('input',()=>syncSectionRow(id)));}

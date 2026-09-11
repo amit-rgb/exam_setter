@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - questions_reviews
+      - ui/redesign-professional
   pull_request:
     branches:
       - questions_reviews

@@ -1,0 +1,31 @@
+{
+  "sources": [
+    "https://cbseacademic.nic.in/",
+    "https://uis.unesco.org/en/methods-and-tools/isced",
+    "https://uis.unesco.org/sites/default/files/documents/isced-fields-of-education-and-training-2013-en.pdf"
+  ],
+  "subjects": [
+    {"label":"English","value":"english"},
+    {"label":"Hindi","value":"hindi"},
+    {"label":"Mathematics","value":"mathematics"},
+    {"label":"Physics","value":"physics"},
+    {"label":"Chemistry","value":"chemistry"},
+    {"label":"Biology","value":"biology"},
+    {"label":"Science","value":"science"},
+    {"label":"Computer Science","value":"computer_science"},
+    {"label":"Social Science","value":"social_science"},
+    {"label":"Economics","value":"economics"}
+  ],
+  "targetLevels": [
+    {"label":"Class 3","value":"CLASS_3"},
+    {"label":"Class 4","value":"CLASS_4"},
+    {"label":"Class 5","value":"CLASS_5"},
+    {"label":"Class 6","value":"CLASS_6"},
+    {"label":"Class 7","value":"CLASS_7"},
+    {"label":"Class 8","value":"CLASS_8"},
+    {"label":"Class 9","value":"CLASS_9"},
+    {"label":"Class 10","value":"CLASS_10"},
+    {"label":"Class 11","value":"CLASS_11"},
+    {"label":"Class 12","value":"CLASS_12"}
+  ]
+}

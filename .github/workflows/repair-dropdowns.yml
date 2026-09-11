@@ -1,0 +1,33 @@
+name: Repair dropdowns
+on:
+  push:
+    branches:
+      - ui/redesign-professional
+permissions:
+  contents: write
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Repair initialization
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('src/main/resources/static/index.html')
+          s=p.read_text()
+          if 'dropdown-init-v2' in s:
+              print('Already repaired')
+              raise SystemExit(0)
+          start=s.index('async function loadEducationOptions(){')
+          end=s.index('\ndocument.addEventListener(\'click\'',start)
+          replacement='''function initializeEducationControls(subjects, levels){\n  createSearchableSelect('ingestSubjectSelect','ingestSubject',subjects,'chemistry');\n  createSearchableSelect('ingestLevelSelect','ingestLevel',levels,'CLASS_11');\n  createSearchableSelect('blueprintSubjectSelect','blueprintSubject',subjects,'chemistry');\n  createSearchableSelect('blueprintLevelsSelect','blueprintLevels',levels,'CLASS_11',true);\n}\n\n/* dropdown-init-v2 */\nasync function loadEducationOptions(){\n  const subjects=fallbackOptions.subjects.slice(0,10);\n  const levels=fallbackOptions.targetLevels.slice(0,10);\n  initializeEducationControls(subjects,levels);\n  try{\n    const res=await fetch('/education-options.json',{cache:'no-store'});\n    if(!res.ok) throw new Error('Options request failed');\n    const data=await res.json();\n    const loadedSubjects=Array.isArray(data.subjects)?data.subjects.slice(0,10):[];\n    const loadedLevels=Array.isArray(data.targetLevels)?data.targetLevels.slice(0,10):[];\n    if(loadedSubjects.length===10 && loadedLevels.length===10) initializeEducationControls(loadedSubjects,loadedLevels);\n  }catch(e){\n    console.warn('Using built-in education options',e);\n  }\n}\n'''
+          p.write_text(s[:start]+replacement+s[end:])
+          PY
+      - name: Commit repair
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/main/resources/static/index.html
+          git commit -m 'Fix dropdown initialization' || exit 0
+          git push

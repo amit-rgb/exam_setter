@@ -51,7 +51,30 @@ function createSearchableSelect(containerId,hiddenId,options,initialValue,multip
  }
  render();
 }
-async function loadEducationOptions(){try{const res=await fetch('/education-options.json',{cache:'no-store'});if(!res.ok)throw new Error('Options request failed');educationOptions=await res.json();}catch(e){educationOptions=fallbackOptions;showAlert('Education options could not be loaded. Using the built-in reference list.',true);}const subjects=educationOptions.subjects?.length?educationOptions.subjects:fallbackOptions.subjects;const levels=educationOptions.targetLevels?.length?educationOptions.targetLevels:fallbackOptions.targetLevels;createSearchableSelect('ingestSubjectSelect','ingestSubject',subjects,'chemistry');createSearchableSelect('ingestLevelSelect','ingestLevel',levels,'CLASS_11');createSearchableSelect('blueprintSubjectSelect','blueprintSubject',subjects,'chemistry');createSearchableSelect('blueprintLevelsSelect','blueprintLevels',levels,'CLASS_11',true);}
+function initializeEducationControls(subjects, levels){
+  createSearchableSelect('ingestSubjectSelect','ingestSubject',subjects,'chemistry');
+  createSearchableSelect('ingestLevelSelect','ingestLevel',levels,'CLASS_11');
+  createSearchableSelect('blueprintSubjectSelect','blueprintSubject',subjects,'chemistry');
+  createSearchableSelect('blueprintLevelsSelect','blueprintLevels',levels,'CLASS_11',true);
+}
+
+/* dropdown-init-v2 */
+async function loadEducationOptions(){
+  const subjects=fallbackOptions.subjects.slice(0,10);
+  const levels=fallbackOptions.targetLevels.slice(0,10);
+  initializeEducationControls(subjects,levels);
+  try{
+    const res=await fetch('/education-options.json',{cache:'no-store'});
+    if(!res.ok) throw new Error('Options request failed');
+    const data=await res.json();
+    const loadedSubjects=Array.isArray(data.subjects)?data.subjects.slice(0,10):[];
+    const loadedLevels=Array.isArray(data.targetLevels)?data.targetLevels.slice(0,10):[];
+    if(loadedSubjects.length===10 && loadedLevels.length===10) initializeEducationControls(loadedSubjects,loadedLevels);
+  }catch(e){
+    console.warn('Using built-in education options',e);
+  }
+}
+
 document.addEventListener('click',e=>{if(e.target.closest('[data-searchable-select]'))return;document.querySelectorAll('[data-searchable-select]').forEach(c=>c.dispatchEvent(new CustomEvent('close-dropdown')));});
 function addSectionRow(name='Section A: Conceptual MCQs',type='MCQ',count=3,marks=4,neg=1.0,diff='EASY'){const desktop=document.getElementById('sectionsContainer'),mobile=document.getElementById('sectionsContainerMobile'),id='section-'+Math.random().toString(36).slice(2);const html=`<div data-section-row="${id}" class="section-row grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 lg:grid-cols-12 lg:items-center lg:rounded-none lg:border-0 lg:border-t lg:px-4 lg:py-4"><div class="lg:col-span-4"><input type="text" class="sec-name field w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2.5 text-xs outline-none focus:border-indigo-500 focus:bg-white" value="${escapeHtml(name)}" required></div><div class="lg:col-span-2"><select class="sec-type field w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2.5 text-xs"><option value="MCQ" ${type==='MCQ'?'selected':''}>MCQ</option><option value="NUMERICAL" ${type==='NUMERICAL'?'selected':''}>NUMERICAL</option><option value="DESCRIPTIVE" ${type==='DESCRIPTIVE'?'selected':''}>DESCRIPTIVE</option></select></div><div class="lg:col-span-2"><input type="number" class="sec-count field w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2.5 text-xs text-center" value="${count}" min="1" max="50" required></div><div class="lg:col-span-1"><input type="number" class="sec-marks field w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2.5 text-xs text-center" value="${marks}" min="1" required></div><div class="lg:col-span-1"><input type="number" step="0.25" class="sec-neg field w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2.5 text-xs text-center" value="${neg}" min="0" required></div><div class="lg:col-span-2 flex gap-2"><select class="sec-diff field min-w-0 flex-1 rounded-xl border border-slate-300 bg-slate-50 px-3 py-2.5 text-xs"><option value="EASY" ${diff==='EASY'?'selected':''}>EASY</option><option value="MEDIUM" ${diff==='MEDIUM'?'selected':''}>MEDIUM</option><option value="HARD" ${diff==='HARD'?'selected':''}>HARD</option></select><button type="button" onclick="removeSectionRow('${id}')" class="rounded-xl border border-slate-200 px-3 text-xs font-black text-slate-400">✕</button></div></div>`;const wrapper=document.createElement('div');wrapper.innerHTML=html;const node=wrapper.firstElementChild;desktop.appendChild(node.cloneNode(true));mobile.appendChild(node.cloneNode(true));syncSectionRow(id);[desktop,mobile].forEach(root=>root.querySelector(`[data-section-row="${id}"]`).querySelectorAll('input,select').forEach(el=>el.addEventListener('input',()=>syncSectionRow(id)));}
 function syncSectionRow(id){const d=document.querySelector(`#sectionsContainer [data-section-row="${id}"]`),m=document.querySelector(`#sectionsContainerMobile [data-section-row="${id}"]`);if(!d||!m)return;const de=d.querySelectorAll('input,select'),me=m.querySelectorAll('input,select');de.forEach((el,i)=>{if(me[i]&&document.activeElement!==me[i])me[i].value=el.value});me.forEach((el,i)=>{if(de[i]&&document.activeElement!==de[i])de[i].value=el.value});}

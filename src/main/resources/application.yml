@@ -61,6 +61,7 @@ app:
   verification:
     enabled: ${APP_VERIFICATION_ENABLED:false}
   ncert:
+    admin-ingestion-enabled: ${NCERT_ADMIN_INGESTION_ENABLED:false}
     ingestion:
       enabled: ${NCERT_INGESTION_ENABLED:false}
       root: ${NCERT_CORPUS_ROOT:./NCERT}

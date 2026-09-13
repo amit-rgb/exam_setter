@@ -7,11 +7,6 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 
-/**
- * Guard against generating questions that are too close to retrieved source
- * material or known exam questions. This foundation exposes a reusable hook;
- * the next increment can add a dedicated PYQ collection and threshold tuning.
- */
 @Service
 public class QuestionSimilarityGuardService {
 
@@ -22,20 +17,24 @@ public class QuestionSimilarityGuardService {
     }
 
     public boolean isTooSimilarToKnowledge(String questionText, String subject) {
-        if (questionText == null || questionText.isBlank()) {
-            return false;
-        }
-
-        String filter = String.format("subject == '%s'", subject.trim().toLowerCase());
-        List<Document> matches = vectorStore.similaritySearch(
-                SearchRequest.builder()
-                        .query(questionText)
-                        .topK(1)
-                        .similarityThreshold(0.90)
-                        .filterExpression(filter)
-                        .build()
-        );
-
-        return !matches.isEmpty();
+        return !search(questionText, "subject == '" + escape(subject) + "'", 0.92).isEmpty();
     }
+
+    public boolean isTooSimilarToPyq(String questionText, String examId) {
+        if (examId == null || examId.isBlank()) return false;
+        String filter = "sourceType == 'PREVIOUS_YEAR_PAPER' && examId == '" + escape(examId) + "'";
+        return !search(questionText, filter, 0.94).isEmpty();
+    }
+
+    private List<Document> search(String text, String filter, double threshold) {
+        if (text == null || text.isBlank()) return List.of();
+        return vectorStore.similaritySearch(SearchRequest.builder()
+                .query(text)
+                .topK(1)
+                .similarityThreshold(threshold)
+                .filterExpression(filter)
+                .build());
+    }
+
+    private String escape(String value) { return value == null ? "" : value.replace("'", "\\'"); }
 }

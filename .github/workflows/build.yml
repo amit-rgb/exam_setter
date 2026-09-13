@@ -12,6 +12,7 @@ on:
     branches:
       - main
       - questions_reviews
+      - feature/exam-aware-rag-foundation
 
 jobs:
   build:

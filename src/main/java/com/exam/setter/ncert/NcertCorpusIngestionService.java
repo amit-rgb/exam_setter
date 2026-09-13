@@ -17,9 +17,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Service
 public class NcertCorpusIngestionService {
@@ -63,13 +66,9 @@ public class NcertCorpusIngestionService {
     }
 
     public RunSummary ingestManifest() throws IOException {
-        if (!Files.isRegularFile(manifestPath)) {
-            throw new IOException("NCERT manifest not found: " + manifestPath);
-        }
+        if (!Files.isRegularFile(manifestPath)) throw new IOException("NCERT manifest not found: " + manifestPath);
         NcertCorpusManifest manifest = objectMapper.readValue(manifestPath.toFile(), NcertCorpusManifest.class);
-        if (manifest.entries() == null || manifest.entries().isEmpty()) {
-            throw new IOException("NCERT manifest contains no entries: " + manifestPath);
-        }
+        validateManifest(manifest);
 
         String corpusVersion = blankToDefault(manifest.corpusVersion(), defaultCorpusVersion);
         int completed = 0, skipped = 0, failed = 0, chunks = 0;
@@ -86,8 +85,23 @@ public class NcertCorpusIngestionService {
         return new RunSummary(manifest.entries().size(), completed, skipped, failed, chunks, corpusVersion);
     }
 
+    private void validateManifest(NcertCorpusManifest manifest) throws IOException {
+        if (manifest == null || manifest.entries() == null || manifest.entries().isEmpty()) {
+            throw new IOException("NCERT manifest contains no entries: " + manifestPath);
+        }
+        if (manifest.schemaVersion() != null && !"1".equals(manifest.schemaVersion())) {
+            throw new IOException("Unsupported NCERT manifest schemaVersion: " + manifest.schemaVersion());
+        }
+        Set<String> keys = new HashSet<>();
+        Set<String> files = new HashSet<>();
+        for (NcertCorpusManifest.Entry entry : manifest.entries()) {
+            validateEntry(entry);
+            if (!keys.add(entry.documentKey())) throw new IOException("Duplicate NCERT documentKey: " + entry.documentKey());
+            if (!files.add(entry.fileName().replace('\\', '/'))) throw new IOException("Duplicate NCERT fileName: " + entry.fileName());
+        }
+    }
+
     private Outcome ingestEntry(NcertCorpusManifest.Entry entry, String corpusVersion) throws Exception {
-        validateEntry(entry);
         Path pdf = safeResolve(entry.fileName());
         if (!Files.isRegularFile(pdf)) throw new IOException("NCERT PDF not found: " + pdf);
 
@@ -102,7 +116,7 @@ public class NcertCorpusIngestionService {
             throw new IOException("Manifest SHA-256 mismatch for " + entry.fileName() + ": expected " + entry.contentHash() + ", actual " + actualHash);
         }
 
-        deleteExistingChunks(entry.documentKey(), corpusVersion, previous == null ? 0 : previous.chunkCount());
+        deleteExistingChunks(entry.documentKey(), previous == null ? 0 : previous.chunkCount());
         repository.start(entry, corpusVersion, actualHash, chunkVersion);
         try {
             int count = indexPdf(entry, corpusVersion, actualHash, pdf);
@@ -129,8 +143,7 @@ public class NcertCorpusIngestionService {
 
                 Document pageDocument = new Document(text, Map.of("pageNumber", page));
                 for (Document chunk : splitter.apply(List.of(pageDocument))) {
-                    String id = deterministicChunkId(entry.documentKey(), chunkIndex);
-                    Map<String, Object> metadata = new java.util.HashMap<>(chunk.getMetadata());
+                    Map<String, Object> metadata = new HashMap<>(chunk.getMetadata());
                     metadata.put("source", "NCERT");
                     metadata.put("sourceType", "TEXTBOOK");
                     metadata.put("corpusVersion", corpusVersion);
@@ -138,7 +151,9 @@ public class NcertCorpusIngestionService {
                     metadata.put("language", upper(entry.language()));
                     metadata.put("classLevel", upper(entry.classLevel()));
                     metadata.put("subject", upper(entry.subject()));
-                    metadata.put("targetLevels", entry.targetLevels() == null ? List.of(upper(entry.classLevel())) : entry.targetLevels().stream().map(this::upper).distinct().toList());
+                    metadata.put("targetLevels", entry.targetLevels() == null
+                            ? List.of(upper(entry.classLevel()))
+                            : entry.targetLevels().stream().map(this::upper).distinct().toList());
                     metadata.put("bookCode", entry.bookCode());
                     metadata.put("bookTitle", entry.bookTitle());
                     metadata.put("chapterNumber", entry.chapterNumber());
@@ -148,6 +163,7 @@ public class NcertCorpusIngestionService {
                     metadata.put("contentHash", hash);
                     metadata.put("chunkIndex", chunkIndex);
                     metadata.put("contentScope", blankToDefault(entry.contentScope(), "CHAPTER"));
+                    String id = deterministicChunkId(entry.documentKey(), chunkIndex);
                     batch.add(new Document(id, chunk.getText(), metadata));
                     chunkIndex++;
                     if (batch.size() >= batchSize) {
@@ -162,7 +178,7 @@ public class NcertCorpusIngestionService {
         return chunkIndex;
     }
 
-    private void deleteExistingChunks(String documentKey, String corpusVersion, int previousCount) {
+    private void deleteExistingChunks(String documentKey, int previousCount) {
         if (previousCount <= 0) return;
         List<String> ids = new ArrayList<>(previousCount);
         for (int i = 0; i < previousCount; i++) ids.add(deterministicChunkId(documentKey, i));
@@ -174,12 +190,18 @@ public class NcertCorpusIngestionService {
     private Path safeResolve(String fileName) throws IOException {
         Path resolved = root.resolve(fileName).normalize();
         if (!resolved.startsWith(root)) throw new IOException("Manifest file escapes NCERT corpus root: " + fileName);
+        if (!fileName.toLowerCase().endsWith(".pdf")) throw new IOException("NCERT corpus entry is not a PDF: " + fileName);
         return resolved;
     }
 
     private void validateEntry(NcertCorpusManifest.Entry e) {
         if (e == null || blank(e.documentKey()) || blank(e.fileName()) || blank(e.subject()) || blank(e.bookCode())
-                || blank(e.language()) || blank(e.classLevel())) throw new IllegalArgumentException("Manifest entry is missing a required field");
+                || blank(e.language()) || blank(e.classLevel())) {
+            throw new IllegalArgumentException("Manifest entry is missing a required field");
+        }
+        if (e.targetLevels() != null && e.targetLevels().stream().anyMatch(this::blank)) {
+            throw new IllegalArgumentException("Manifest targetLevels contains a blank value: " + e.documentKey());
+        }
     }
 
     private String deterministicChunkId(String key, int index) {
@@ -193,7 +215,9 @@ public class NcertCorpusIngestionService {
         catch (Exception e) { throw new IllegalStateException("SHA-256 unavailable", e); }
     }
 
-    private String normalize(String text) { return text.replace('\u0000', ' ').replaceAll("[ \\t]+", " ").replaceAll("\\n{3,}", "\\n\\n").trim(); }
+    private String normalize(String text) {
+        return text.replace('\u0000', ' ').replaceAll("[ \\t]+", " ").replaceAll("\\n{3,}", "\\n\\n").trim();
+    }
     private String upper(String value) { return value == null ? "" : value.trim().toUpperCase(); }
     private boolean blank(String value) { return value == null || value.isBlank(); }
     private String blankToDefault(String value, String fallback) { return blank(value) ? fallback : value; }

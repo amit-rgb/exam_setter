@@ -7,6 +7,7 @@ on:
       - questions_reviews
       - ui/redesign-professional
       - feature/exam-aware-rag-foundation
+      - feature/ncert-production-corpus
   pull_request:
     branches:
       - main

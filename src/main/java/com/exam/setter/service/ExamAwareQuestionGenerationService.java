@@ -66,7 +66,7 @@ public class ExamAwareQuestionGenerationService {
 
     private List<Document> retrieveKnowledge(QuestionGenerationRequest request, String source, String corpusVersion, String bookCode, Integer chapterNumber) {
         String normalized = source.trim().toUpperCase();
-        String query = request.subject() + " " + firstNonBlank(request.topic(), "fundamental concepts") + " " + request.questionType().name() + " principles laws formulas examples";
+        String query = request.subject() + " " + firstNonBlank(request.topic(), "fundamental concepts", null) + " " + request.questionType().name() + " principles laws formulas examples";
         if ("NCERT".equals(normalized)) return ncertRetrieval.retrieve(request.subject(), request.targetLevels(), query, corpusVersion, bookCode, chapterNumber, Math.max(12, request.count() * 5));
         List<Document> userDocs = retrieveUserDocuments(request, query);
         if ("MIXED".equals(normalized)) { List<Document> ncertDocs = ncertRetrieval.retrieve(request.subject(), request.targetLevels(), query, corpusVersion, bookCode, chapterNumber, Math.max(8, request.count() * 3)); List<Document> combined = new ArrayList<>(ncertDocs); combined.addAll(userDocs.stream().limit(Math.max(4, request.count() * 2)).toList()); return combined; }

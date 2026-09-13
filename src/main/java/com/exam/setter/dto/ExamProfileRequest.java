@@ -11,7 +11,12 @@ import java.util.Map;
 public record ExamProfileRequest(
         @NotBlank @Size(max = 200) String examId,
         @NotBlank @Size(max = 200) String examName,
+        @Size(max = 100) String subject,
         @Size(max = 200) String paperName,
+        @Size(max = 50) String knowledgeSource,
+        @Size(max = 50) String corpusVersion,
+        @Size(max = 100) String ncertBookCode,
+        @Min(1) @Max(1000) Integer ncertChapterNumber,
         @Size(max = 10) List<@NotBlank @Size(max = 50) String> targetLevels,
         @Min(1) @Max(1000) Integer questionCount,
         Integer marksPerQuestion,

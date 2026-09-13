@@ -28,6 +28,9 @@ public class ExamPaperEntity {
     @Column(nullable = false)
     private String subject;
 
+    @Column(length = 200)
+    private String examId;
+
     private int durationMinutes;
     private int totalMarks;
 

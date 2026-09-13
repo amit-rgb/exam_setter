@@ -25,8 +25,22 @@ public class ExamProfileEntity {
     @Column(nullable = false, length = 200)
     private String examName;
 
+    @Column(length = 100)
+    private String subject;
+
     @Column(length = 200)
     private String paperName;
+
+    @Column(length = 50)
+    private String knowledgeSource;
+
+    @Column(length = 50)
+    private String corpusVersion;
+
+    @Column(length = 100)
+    private String ncertBookCode;
+
+    private Integer ncertChapterNumber;
 
     @Column(length = 2000)
     private String targetLevelsJson;

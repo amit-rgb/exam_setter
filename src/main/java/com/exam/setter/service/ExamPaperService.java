@@ -12,9 +12,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.HashSet;
 
 @Service
 public class ExamPaperService {
@@ -28,10 +28,6 @@ public class ExamPaperService {
         this.examPaperRepository = examPaperRepository;
     }
 
-    /**
-     * Generates questions via RAG and persists them into the database
-     * with PENDING_REVIEW status for single-level expert moderation.
-     */
     @Transactional
     public ExamPaperEntity assembleAndPersistExamPaper(ExamPaperBlueprintRequest request) {
         validateBlueprint(request);
@@ -40,6 +36,7 @@ public class ExamPaperService {
         ExamPaperEntity paperEntity = ExamPaperEntity.builder()
                 .title(request.examTitle())
                 .subject(request.subject().trim().toLowerCase())
+                .examId(request.examId() == null ? null : request.examId().trim().toUpperCase())
                 .durationMinutes(request.durationMinutes())
                 .status(PaperStatus.IN_REVIEW)
                 .createdAt(Instant.now())
@@ -49,17 +46,11 @@ public class ExamPaperService {
 
         for (SectionBlueprint section : request.sections()) {
             QuestionGenerationRequest genRequest = new QuestionGenerationRequest(
-                    request.subject(),
-                    request.targetLevels(),
-                    section.questionType(),
-                    section.difficulty(),
-                    section.questionCount(),
-                    section.marksPerQuestion()
+                    request.subject(), request.targetLevels(), section.questionType(), section.difficulty(),
+                    section.questionCount(), section.marksPerQuestion(), request.examId()
             );
 
-            // 1. Generate grounded questions from vector store context
             List<GeneratedQuestion> generatedQuestions = questionGeneratorService.generateQuestions(genRequest);
-
             int sectionMarks = generatedQuestions.size() * section.marksPerQuestion();
             computedTotalMarks += sectionMarks;
 
@@ -70,7 +61,6 @@ public class ExamPaperService {
                     .negativeMarks(section.negativeMarks())
                     .build();
 
-            // 2. Map DTOs to JPA entities with default PENDING_REVIEW state
             List<QuestionEntity> questionEntities = generatedQuestions.stream().map(gq ->
                     QuestionEntity.builder()
                             .section(sectionEntity)
@@ -93,101 +83,57 @@ public class ExamPaperService {
 
         paperEntity.setTotalMarks(computedTotalMarks);
         paperEntity.setSections(sectionEntities);
-
-        // 3. Persist cascade tree: ExamPaper -> ExamSections -> Questions
         return examPaperRepository.save(paperEntity);
     }
 
     private void validateBlueprint(ExamPaperBlueprintRequest request) {
-        int requestedQuestionCount = request.sections().stream()
-                .mapToInt(SectionBlueprint::questionCount)
-                .sum();
-
+        int requestedQuestionCount = request.sections().stream().mapToInt(SectionBlueprint::questionCount).sum();
         if (requestedQuestionCount > 100) {
             throw new IllegalArgumentException("A single paper may request at most 100 questions.");
         }
-
     }
 
     @Transactional
     public ExamPaperEntity updateQuestionSelection(java.util.UUID paperId, java.util.List<java.util.UUID> includedQuestionIds) {
         ExamPaperEntity paper = examPaperRepository.findById(paperId)
                 .orElseThrow(() -> new RuntimeException("Exam Paper not found: " + paperId));
+        Set<java.util.UUID> included = includedQuestionIds == null ? Set.of() : new HashSet<>(includedQuestionIds);
 
-        java.util.Set<java.util.UUID> included = includedQuestionIds == null
-                ? Set.of()
-                : new HashSet<>(includedQuestionIds);
-
-        paper.getSections().forEach(section ->
-                section.getQuestions().forEach(question ->
-                        question.setIncludedInPaper(included.contains(question.getId()))
-                )
-        );
+        paper.getSections().forEach(section -> section.getQuestions().forEach(question ->
+                question.setIncludedInPaper(included.contains(question.getId()))));
 
         int selectedMarks = paper.getSections().stream()
                 .flatMap(section -> section.getQuestions().stream())
                 .filter(QuestionEntity::isIncludedInPaper)
-                .mapToInt(QuestionEntity::getMarks)
-                .sum();
+                .mapToInt(QuestionEntity::getMarks).sum();
         paper.setTotalMarks(selectedMarks);
 
-        paper.getSections().forEach(section -> {
-            int sectionMarks = section.getQuestions().stream()
-                    .filter(QuestionEntity::isIncludedInPaper)
-                    .mapToInt(QuestionEntity::getMarks)
-                    .sum();
-            section.setSectionMarks(sectionMarks);
-        });
-
+        paper.getSections().forEach(section -> section.setSectionMarks(
+                section.getQuestions().stream().filter(QuestionEntity::isIncludedInPaper)
+                        .mapToInt(QuestionEntity::getMarks).sum()));
         return examPaperRepository.save(paper);
     }
 
-    /**
-     * Assemble an in-memory AssembledExamPaper DTO without persisting to the database.
-     * This is used by endpoints that only need a generated preview/export.
-     */
-    public com.exam.setter.dto.AssembledExamPaper assembleExamPaper(ExamPaperBlueprintRequest request) {
+    public AssembledExamPaper assembleExamPaper(ExamPaperBlueprintRequest request) {
         int totalMarks = 0;
         int totalQuestions = 0;
-
-        List<com.exam.setter.dto.AssembledExamPaper.AssembledSection> assembledSections = new ArrayList<>();
+        List<AssembledExamPaper.AssembledSection> assembledSections = new ArrayList<>();
 
         for (SectionBlueprint section : request.sections()) {
             QuestionGenerationRequest genRequest = new QuestionGenerationRequest(
-                    request.subject(),
-                    request.targetLevels(),
-                    section.questionType(),
-                    section.difficulty(),
-                    section.questionCount(),
-                    section.marksPerQuestion()
+                    request.subject(), request.targetLevels(), section.questionType(), section.difficulty(),
+                    section.questionCount(), section.marksPerQuestion(), request.examId()
             );
-
             List<GeneratedQuestion> generatedQuestions = questionGeneratorService.generateQuestions(genRequest);
-
             int sectionMarks = generatedQuestions.size() * section.marksPerQuestion();
             totalMarks += sectionMarks;
             totalQuestions += generatedQuestions.size();
-
-            com.exam.setter.dto.AssembledExamPaper.AssembledSection assembledSection =
-                    new com.exam.setter.dto.AssembledExamPaper.AssembledSection(
-                            section.sectionName(),
-                            sectionMarks,
-                            section.negativeMarks(),
-                            generatedQuestions
-                    );
-
-            assembledSections.add(assembledSection);
+            assembledSections.add(new AssembledExamPaper.AssembledSection(
+                    section.sectionName(), sectionMarks, section.negativeMarks(), generatedQuestions));
         }
 
-        return new com.exam.setter.dto.AssembledExamPaper(
-                request.examTitle(),
-                request.subject().trim().toLowerCase(),
-                request.targetLevels(),
-                request.durationMinutes(),
-                totalMarks,
-                totalQuestions,
-                assembledSections,
-                Instant.now()
-        );
+        return new AssembledExamPaper(request.examTitle(), request.subject().trim().toLowerCase(),
+                request.targetLevels(), request.durationMinutes(), totalMarks, totalQuestions,
+                assembledSections, Instant.now());
     }
 }

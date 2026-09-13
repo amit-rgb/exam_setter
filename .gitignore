@@ -36,3 +36,6 @@ build/
 .env
 .env.*
 !.env.example
+
+# Local NCERT corpus is external data, not application source
+/NCERT/

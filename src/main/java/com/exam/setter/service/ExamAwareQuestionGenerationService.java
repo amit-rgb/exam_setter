@@ -14,8 +14,10 @@ import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -23,18 +25,21 @@ public class ExamAwareQuestionGenerationService {
     private final ChatClient chatClient;
     private final VectorStore vectorStore;
     private final VectorMetadataHelperService metadataHelper;
+    private final NcertRetrievalService ncertRetrieval;
     private final ExamProfileService profileService;
     private final QuestionSimilarityGuardService similarityGuard;
     private final ObjectMapper mapper;
 
     public ExamAwareQuestionGenerationService(ChatClient.Builder builder, VectorStore vectorStore,
                                               VectorMetadataHelperService metadataHelper,
+                                              NcertRetrievalService ncertRetrieval,
                                               ExamProfileService profileService,
                                               QuestionSimilarityGuardService similarityGuard,
                                               ObjectMapper mapper) {
         this.chatClient = builder.build();
         this.vectorStore = vectorStore;
         this.metadataHelper = metadataHelper;
+        this.ncertRetrieval = ncertRetrieval;
         this.profileService = profileService;
         this.similarityGuard = similarityGuard;
         this.mapper = mapper.copy().configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
@@ -42,21 +47,35 @@ public class ExamAwareQuestionGenerationService {
 
     public List<GeneratedQuestion> generate(QuestionGenerationRequest request) {
         ExamProfileEntity profile = profileService.get(request.examId());
-        List<Document> knowledge = retrieveKnowledge(request);
-        if (knowledge.isEmpty()) throw new IllegalArgumentException("No knowledge context is available for the selected subject and target levels.");
+        String source = firstNonBlank(request.knowledgeSource(), profile.getKnowledgeSource(), "NCERT");
+        String corpusVersion = firstNonBlank(request.corpusVersion(), profile.getCorpusVersion(), null);
+        String bookCode = firstNonBlank(request.bookCode(), profile.getNcertBookCode(), null);
+        Integer chapterNumber = request.chapterNumber() != null ? request.chapterNumber() : profile.getNcertChapterNumber();
+
+        List<Document> knowledge = retrieveKnowledge(request, source, corpusVersion, bookCode, chapterNumber);
+        if (knowledge.isEmpty()) {
+            throw new IllegalArgumentException("No authoritative " + source + " context is available for the selected subject, target levels and NCERT scope.");
+        }
+
         String knowledgeText = knowledge.stream().map(Document::getText).collect(Collectors.joining("\n\n---\n\n"));
+        List<String> citations = knowledge.stream().map(ncertRetrieval::citation).distinct().limit(8).toList();
         List<Document> pyqs = retrievePyqs(request);
         String pyqText = pyqs.stream().map(Document::getText).collect(Collectors.joining("\n--- PYQ ---\n"));
 
         Map<String, Object> constraints = profileService.toGenerationConstraints(profile);
         List<GeneratedQuestion> accepted = new ArrayList<>();
-        for (int attempt = 0; attempt < 3 && accepted.size() < request.count(); attempt++) {
+        Set<String> normalizedAccepted = new HashSet<>();
+        for (int attempt = 0; attempt < 4 && accepted.size() < request.count(); attempt++) {
             int remaining = request.count() - accepted.size();
-            String prompt = buildPrompt(request, constraints, pyqText, knowledgeText, remaining);
+            String prompt = buildPrompt(request, constraints, pyqText, knowledgeText, remaining, source, citations);
             String response = chatClient.prompt().user(prompt).call().content();
             for (GeneratedQuestion q : parse(response)) {
-                if (accepted.size() >= request.count()) break;
-                if (!similarityGuard.isTooSimilarToPyq(q.questionText(), request.examId())) accepted.add(q);
+                if (accepted.size() >= request.count() || q.questionText() == null || q.questionText().isBlank()) break;
+                String normalized = normalizeQuestion(q.questionText());
+                if (!normalizedAccepted.add(normalized)) continue;
+                if (similarityGuard.isTooSimilarToPyq(q.questionText(), request.examId())) continue;
+                if (accepted.stream().anyMatch(existing -> lexicalSimilarity(existing.questionText(), q.questionText()) >= 0.86)) continue;
+                accepted.add(withCitations(q, citations));
             }
         }
         if (accepted.size() < request.count()) {
@@ -65,16 +84,34 @@ public class ExamAwareQuestionGenerationService {
         return accepted;
     }
 
-    private List<Document> retrieveKnowledge(QuestionGenerationRequest request) {
+    private List<Document> retrieveKnowledge(QuestionGenerationRequest request, String source,
+                                             String corpusVersion, String bookCode, Integer chapterNumber) {
+        String normalized = source.trim().toUpperCase();
+        String query = request.subject() + " " + firstNonBlank(request.topic(), "fundamental concepts") + " " + request.questionType().name() + " principles laws formulas examples";
+        if ("NCERT".equals(normalized)) {
+            return ncertRetrieval.retrieve(request.subject(), request.targetLevels(), query, corpusVersion, bookCode, chapterNumber,
+                    Math.max(12, request.count() * 5));
+        }
+
+        List<Document> userDocs = retrieveUserDocuments(request, query);
+        if ("MIXED".equals(normalized)) {
+            List<Document> ncertDocs = ncertRetrieval.retrieve(request.subject(), request.targetLevels(), query, corpusVersion, bookCode, chapterNumber,
+                    Math.max(8, request.count() * 3));
+            List<Document> combined = new ArrayList<>(ncertDocs);
+            combined.addAll(userDocs.stream().limit(Math.max(4, request.count() * 2)).toList());
+            return combined;
+        }
+        return userDocs;
+    }
+
+    private List<Document> retrieveUserDocuments(QuestionGenerationRequest request, String query) {
         List<String> files = metadataHelper.getDistinctFilesForSubjectAndLevels(request.subject(), request.targetLevels());
         List<Document> result = new ArrayList<>();
         if (!files.isEmpty()) {
             int perFile = Math.max(3, request.count() * 4 / files.size());
             for (String file : files) {
-                String filter = "subject == '" + escape(request.subject().trim().toLowerCase()) + "' && fileName == '" + escape(file) + "'";
-                result.addAll(vectorStore.similaritySearch(SearchRequest.builder()
-                        .query(request.subject() + " concepts principles laws formulas")
-                        .topK(perFile).similarityThreshold(0.35).filterExpression(filter).build()));
+                String filter = "sourceType != 'PREVIOUS_YEAR_PAPER' && subject == '" + escape(request.subject().trim().toLowerCase()) + "' && fileName == '" + escape(file) + "'";
+                result.addAll(vectorStore.similaritySearch(SearchRequest.builder().query(query).topK(perFile).similarityThreshold(0.30).filterExpression(filter).build()));
             }
         }
         return result;
@@ -84,32 +121,41 @@ public class ExamAwareQuestionGenerationService {
         String filter = "sourceType == 'PREVIOUS_YEAR_PAPER' && examId == '" + escape(request.examId().trim().toUpperCase()) + "'";
         return vectorStore.similaritySearch(SearchRequest.builder()
                 .query(request.subject() + " " + request.questionType().name() + " examination")
-                .topK(Math.min(8, Math.max(3, request.count())))
+                .topK(Math.min(10, Math.max(3, request.count())))
                 .similarityThreshold(0.20).filterExpression(filter).build());
     }
 
     private String buildPrompt(QuestionGenerationRequest request, Map<String, Object> constraints,
-                               String pyqText, String knowledgeText, int count) {
+                               String pyqText, String knowledgeText, int count, String source, List<String> citations) {
         return """
                 You are an expert examination question setter.
                 Generate exactly %d NEW questions.
-                Exam profile constraints are authoritative: %s
+                The exam profile and retrieval policy are authoritative.
+                Knowledge source policy: %s
+                Exam profile constraints: %s
                 Subject: %s
                 Target levels: %s
+                Requested topic: %s
                 Requested type: %s
                 Requested difficulty: %s
                 Marks: %d
 
-                Previous-year questions below are PATTERN EVIDENCE ONLY. Never copy, paraphrase, or reproduce them.
+                Previous-year questions are PATTERN EVIDENCE ONLY. Never copy, paraphrase, or reproduce them.
                 %s
 
-                The following is the authoritative knowledge corpus. Do not invent facts outside it.
+                AUTHORITATIVE KNOWLEDGE CONTEXT:
                 %s
 
+                RETRIEVAL SOURCES (for grounding; do not invent additional sources):
+                %s
+
+                Generate questions only from the authoritative knowledge context. Do not use PYQs as factual knowledge.
+                For MCQ use exactly four options and exactly one correct answer.
                 Return raw JSON only: {"questions":[{"questionText":"...","questionType":"...","options":[],"correctAnswer":"...","explanation":"...","difficulty":"...","marks":%d,"topic":"..."}]}
-                """.formatted(count, constraints, request.subject(), request.targetLevels(), request.questionType().name(),
-                request.difficulty(), request.marks(), pyqText.isBlank() ? "No PYQs available." : pyqText,
-                knowledgeText, request.marks());
+                """.formatted(count, source, constraints, request.subject(), request.targetLevels(),
+                request.topic() == null ? "" : request.topic(), request.questionType().name(), request.difficulty(), request.marks(),
+                pyqText.isBlank() ? "No PYQs available." : pyqText, knowledgeText,
+                citations.isEmpty() ? "None" : String.join("\n", citations), request.marks());
     }
 
     private List<GeneratedQuestion> parse(String response) {
@@ -124,6 +170,28 @@ public class ExamAwareQuestionGenerationService {
         } catch (Exception e) {
             throw new IllegalStateException("Unable to parse exam-aware question response: " + e.getMessage(), e);
         }
+    }
+
+    private GeneratedQuestion withCitations(GeneratedQuestion q, List<String> citations) {
+        return new GeneratedQuestion(q.questionText(), q.questionType(), q.options(), q.correctAnswer(), q.explanation(), q.difficulty(), q.marks(), q.topic(), citations);
+    }
+
+    private double lexicalSimilarity(String a, String b) {
+        Set<String> left = Set.of(normalizeQuestion(a).split(" "));
+        Set<String> right = Set.of(normalizeQuestion(b).split(" "));
+        if (left.isEmpty() || right.isEmpty()) return 0;
+        long intersection = left.stream().filter(right::contains).count();
+        return intersection / (double) (left.size() + right.size() - intersection);
+    }
+
+    private String normalizeQuestion(String value) {
+        return value == null ? "" : value.toLowerCase().replaceAll("[^a-z0-9 ]", " ").replaceAll("\\s+", " ").trim();
+    }
+
+    private String firstNonBlank(String first, String second, String fallback) {
+        if (first != null && !first.isBlank()) return first.trim();
+        if (second != null && !second.isBlank()) return second.trim();
+        return fallback;
     }
 
     private String escape(String value) { return value == null ? "" : value.replace("'", "\\'"); }

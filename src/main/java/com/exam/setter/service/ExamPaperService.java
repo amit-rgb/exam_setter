@@ -18,13 +18,15 @@ import java.util.Set;
 
 @Service
 public class ExamPaperService {
-
     private final QuestionGeneratorService questionGeneratorService;
+    private final ExamAwareQuestionGenerationService examAwareGenerator;
     private final ExamPaperRepository examPaperRepository;
 
     public ExamPaperService(QuestionGeneratorService questionGeneratorService,
+                            ExamAwareQuestionGenerationService examAwareGenerator,
                             ExamPaperRepository examPaperRepository) {
         this.questionGeneratorService = questionGeneratorService;
+        this.examAwareGenerator = examAwareGenerator;
         this.examPaperRepository = examPaperRepository;
     }
 
@@ -32,108 +34,68 @@ public class ExamPaperService {
     public ExamPaperEntity assembleAndPersistExamPaper(ExamPaperBlueprintRequest request) {
         validateBlueprint(request);
         int computedTotalMarks = 0;
-
         ExamPaperEntity paperEntity = ExamPaperEntity.builder()
                 .title(request.examTitle())
                 .subject(request.subject().trim().toLowerCase())
                 .examId(request.examId() == null ? null : request.examId().trim().toUpperCase())
                 .durationMinutes(request.durationMinutes())
-                .status(PaperStatus.IN_REVIEW)
-                .createdAt(Instant.now())
-                .build();
-
+                .status(PaperStatus.IN_REVIEW).createdAt(Instant.now()).build();
         List<ExamSectionEntity> sectionEntities = new ArrayList<>();
 
         for (SectionBlueprint section : request.sections()) {
             QuestionGenerationRequest genRequest = new QuestionGenerationRequest(
                     request.subject(), request.targetLevels(), section.questionType(), section.difficulty(),
-                    section.questionCount(), section.marksPerQuestion(), request.examId()
-            );
-
-            List<GeneratedQuestion> generatedQuestions = questionGeneratorService.generateQuestions(genRequest);
+                    section.questionCount(), section.marksPerQuestion(), request.examId());
+            List<GeneratedQuestion> generatedQuestions = generate(genRequest);
             int sectionMarks = generatedQuestions.size() * section.marksPerQuestion();
             computedTotalMarks += sectionMarks;
-
-            ExamSectionEntity sectionEntity = ExamSectionEntity.builder()
-                    .examPaper(paperEntity)
-                    .sectionName(section.sectionName())
-                    .sectionMarks(sectionMarks)
-                    .negativeMarks(section.negativeMarks())
-                    .build();
-
-            List<QuestionEntity> questionEntities = generatedQuestions.stream().map(gq ->
-                    QuestionEntity.builder()
-                            .section(sectionEntity)
-                            .questionText(gq.questionText())
-                            .questionType(gq.questionType())
-                            .options(gq.options())
-                            .correctAnswer(gq.correctAnswer())
-                            .explanation(gq.explanation())
-                            .difficulty(gq.difficulty())
-                            .marks(gq.marks())
-                            .topic(gq.topic())
-                            .moderationStatus(ModerationStatus.PENDING_REVIEW)
-                            .includedInPaper(false)
-                            .build()
-            ).toList();
-
+            ExamSectionEntity sectionEntity = ExamSectionEntity.builder().examPaper(paperEntity)
+                    .sectionName(section.sectionName()).sectionMarks(sectionMarks)
+                    .negativeMarks(section.negativeMarks()).build();
+            List<QuestionEntity> questionEntities = generatedQuestions.stream().map(gq -> QuestionEntity.builder()
+                    .section(sectionEntity).questionText(gq.questionText()).questionType(gq.questionType())
+                    .options(gq.options()).correctAnswer(gq.correctAnswer()).explanation(gq.explanation())
+                    .difficulty(gq.difficulty()).marks(gq.marks()).topic(gq.topic())
+                    .moderationStatus(ModerationStatus.PENDING_REVIEW).includedInPaper(false).build()).toList();
             sectionEntity.setQuestions(new ArrayList<>(questionEntities));
             sectionEntities.add(sectionEntity);
         }
-
         paperEntity.setTotalMarks(computedTotalMarks);
         paperEntity.setSections(sectionEntities);
         return examPaperRepository.save(paperEntity);
     }
 
+    private List<GeneratedQuestion> generate(QuestionGenerationRequest request) {
+        return request.examId() == null || request.examId().isBlank()
+                ? questionGeneratorService.generateQuestions(request)
+                : examAwareGenerator.generate(request);
+    }
+
     private void validateBlueprint(ExamPaperBlueprintRequest request) {
         int requestedQuestionCount = request.sections().stream().mapToInt(SectionBlueprint::questionCount).sum();
-        if (requestedQuestionCount > 100) {
-            throw new IllegalArgumentException("A single paper may request at most 100 questions.");
-        }
+        if (requestedQuestionCount > 100) throw new IllegalArgumentException("A single paper may request at most 100 questions.");
     }
 
     @Transactional
     public ExamPaperEntity updateQuestionSelection(java.util.UUID paperId, java.util.List<java.util.UUID> includedQuestionIds) {
-        ExamPaperEntity paper = examPaperRepository.findById(paperId)
-                .orElseThrow(() -> new RuntimeException("Exam Paper not found: " + paperId));
+        ExamPaperEntity paper = examPaperRepository.findById(paperId).orElseThrow(() -> new RuntimeException("Exam Paper not found: " + paperId));
         Set<java.util.UUID> included = includedQuestionIds == null ? Set.of() : new HashSet<>(includedQuestionIds);
-
-        paper.getSections().forEach(section -> section.getQuestions().forEach(question ->
-                question.setIncludedInPaper(included.contains(question.getId()))));
-
-        int selectedMarks = paper.getSections().stream()
-                .flatMap(section -> section.getQuestions().stream())
-                .filter(QuestionEntity::isIncludedInPaper)
-                .mapToInt(QuestionEntity::getMarks).sum();
-        paper.setTotalMarks(selectedMarks);
-
-        paper.getSections().forEach(section -> section.setSectionMarks(
-                section.getQuestions().stream().filter(QuestionEntity::isIncludedInPaper)
-                        .mapToInt(QuestionEntity::getMarks).sum()));
+        paper.getSections().forEach(section -> section.getQuestions().forEach(question -> question.setIncludedInPaper(included.contains(question.getId()))));
+        paper.setTotalMarks(paper.getSections().stream().flatMap(s -> s.getQuestions().stream()).filter(QuestionEntity::isIncludedInPaper).mapToInt(QuestionEntity::getMarks).sum());
+        paper.getSections().forEach(section -> section.setSectionMarks(section.getQuestions().stream().filter(QuestionEntity::isIncludedInPaper).mapToInt(QuestionEntity::getMarks).sum()));
         return examPaperRepository.save(paper);
     }
 
     public AssembledExamPaper assembleExamPaper(ExamPaperBlueprintRequest request) {
-        int totalMarks = 0;
-        int totalQuestions = 0;
-        List<AssembledExamPaper.AssembledSection> assembledSections = new ArrayList<>();
-
+        int totalMarks = 0, totalQuestions = 0;
+        List<AssembledExamPaper.AssembledSection> sections = new ArrayList<>();
         for (SectionBlueprint section : request.sections()) {
-            QuestionGenerationRequest genRequest = new QuestionGenerationRequest(
-                    request.subject(), request.targetLevels(), section.questionType(), section.difficulty(),
-                    section.questionCount(), section.marksPerQuestion(), request.examId()
-            );
-            List<GeneratedQuestion> generatedQuestions = questionGeneratorService.generateQuestions(genRequest);
-            int sectionMarks = generatedQuestions.size() * section.marksPerQuestion();
-            totalMarks += sectionMarks;
-            totalQuestions += generatedQuestions.size();
-            assembledSections.add(new AssembledExamPaper.AssembledSection(
-                    section.sectionName(), sectionMarks, section.negativeMarks(), generatedQuestions));
+            QuestionGenerationRequest genRequest = new QuestionGenerationRequest(request.subject(), request.targetLevels(), section.questionType(), section.difficulty(), section.questionCount(), section.marksPerQuestion(), request.examId());
+            List<GeneratedQuestion> questions = generate(genRequest);
+            int marks = questions.size() * section.marksPerQuestion();
+            totalMarks += marks; totalQuestions += questions.size();
+            sections.add(new AssembledExamPaper.AssembledSection(section.sectionName(), marks, section.negativeMarks(), questions));
         }
-
-        return new AssembledExamPaper(request.examTitle(), request.subject().trim().toLowerCase(),
-                request.targetLevels(), request.durationMinutes(), totalMarks, totalQuestions,
-                assembledSections, Instant.now());
+        return new AssembledExamPaper(request.examTitle(), request.subject().trim().toLowerCase(), request.targetLevels(), request.durationMinutes(), totalMarks, totalQuestions, sections, Instant.now());
     }
 }

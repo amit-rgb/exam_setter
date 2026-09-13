@@ -12,6 +12,7 @@ import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import javax.sql.DataSource;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -31,6 +32,7 @@ public class NcertCorpusIngestionService {
     private final ObjectMapper objectMapper;
     private final VectorStore vectorStore;
     private final NcertCorpusRepository repository;
+    private final DataSource dataSource;
     private final Path root;
     private final Path manifestPath;
     private final boolean failFast;
@@ -41,7 +43,7 @@ public class NcertCorpusIngestionService {
     private final String defaultCorpusVersion;
 
     public NcertCorpusIngestionService(
-            ObjectMapper objectMapper, VectorStore vectorStore, NcertCorpusRepository repository,
+            ObjectMapper objectMapper, VectorStore vectorStore, NcertCorpusRepository repository, DataSource dataSource,
             @Value("${app.ncert.ingestion.root:./NCERT}") String root,
             @Value("${app.ncert.ingestion.manifest:./NCERT/manifest.json}") String manifest,
             @Value("${app.ncert.ingestion.fail-fast:false}") boolean failFast,
@@ -53,6 +55,7 @@ public class NcertCorpusIngestionService {
         this.objectMapper = objectMapper;
         this.vectorStore = vectorStore;
         this.repository = repository;
+        this.dataSource = dataSource;
         this.root = Path.of(root).toAbsolutePath().normalize();
         this.manifestPath = Path.of(manifest).toAbsolutePath().normalize();
         this.failFast = failFast;
@@ -99,6 +102,12 @@ public class NcertCorpusIngestionService {
     }
 
     private Outcome ingestEntry(NcertCorpusManifest.Entry entry, String corpusVersion) throws Exception {
+        try (NcertCorpusLock ignored = NcertCorpusLock.acquire(dataSource, entry.documentKey())) {
+            return ingestEntryLocked(entry, corpusVersion);
+        }
+    }
+
+    private Outcome ingestEntryLocked(NcertCorpusManifest.Entry entry, String corpusVersion) throws Exception {
         Path pdf = safeResolve(entry.fileName());
         if (!Files.isRegularFile(pdf)) throw new IOException("NCERT PDF not found: " + pdf);
         String actualHash = sha256(pdf);

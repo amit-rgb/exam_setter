@@ -4,6 +4,7 @@
   const saveContext=value=>sessionStorage.setItem('examContext',JSON.stringify(value));
   const normalize=value=>String(value||'').trim().toUpperCase();
   const levelLabel=level=>String(level||'').replace(/^CLASS_/,'Class ');
+  const profileLevels=profile=>{try{return JSON.parse(profile.targetLevelsJson||'[]').map(normalize)}catch{return[]}};
   let profileRequest;
 
   async function ensureProfile(){
@@ -16,12 +17,15 @@
       const subject=normalize(document.getElementById('blueprintSubject')?.value||ctx.subject);
       const levels=[...(document.getElementById('blueprintLevels')?.selectedOptions||[])].map(o=>normalize(o.value)).filter(Boolean);
       const source=normalize(document.getElementById('knowledgeSource')?.value||ctx.knowledgeSource||'NCERT');
-      const matching=profiles.find(p=>normalize(p.knowledgeSource||'NCERT')===source&&(!p.subject||normalize(p.subject)===subject)&&(!p.targetLevelsJson||JSON.parse(p.targetLevelsJson||'[]').some(level=>levels.includes(normalize(level)))));
-      if(matching){saveContext({...ctx,examId:matching.examId});return new Response(JSON.stringify(profiles),{status:200,headers:{'Content-Type':'application/json'}})}
+      const matching=profiles.find(p=>normalize(p.knowledgeSource||'NCERT')===source&&(!p.subject||normalize(p.subject)===subject)&&(!profileLevels(p).length||profileLevels(p).some(level=>levels.includes(level))));
+      if(matching){
+        saveContext({...ctx,examId:matching.examId});
+        return new Response(JSON.stringify(profiles),{status:200,headers:{'Content-Type':'application/json'}});
+      }
       if(source!=='NCERT'||!subject||!levels.length)return new Response(JSON.stringify(profiles),{status:200,headers:{'Content-Type':'application/json'}});
       const slug=(subject+'-'+levels.join('-')).replace(/[^A-Z0-9_-]+/g,'-');
       const examId='NCERT-'+slug.slice(0,160);
-      const body={examId,examName:`${subject.replaceAll('_',' ')} · ${levels.map(levelLabel).join(', ') } · NCERT`,paperName:'NCERT Assessment',subject:subject.toLowerCase(),knowledgeSource:'NCERT',corpusVersion:document.getElementById('corpusVersion')?.value||'2026',targetLevels:levels,questionCount:null,marksPerQuestion:null,durationMinutes:null,questionTypes:[],difficultyDistribution:{},questionTypeDistribution:{},topicDistribution:{},instructions:'Use the Blueprint sections as the examination pattern. NCERT is the authoritative knowledge source.',previousYearRange:null};
+      const body={examId,examName:`${subject.replaceAll('_',' ')} · ${levels.map(levelLabel).join(', ')} · NCERT`,paperName:'NCERT Assessment',subject:subject.toLowerCase(),knowledgeSource:'NCERT',corpusVersion:document.getElementById('corpusVersion')?.value||'2026',targetLevels:levels,questionCount:null,marksPerQuestion:null,durationMinutes:null,questionTypes:[],difficultyDistribution:{},questionTypeDistribution:{},topicDistribution:{},instructions:'Use the Blueprint sections as the examination pattern. NCERT is the authoritative knowledge source.',previousYearRange:null};
       const created=await originalFetch('/api/exam-profiles',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
       if(!created.ok)return new Response(JSON.stringify(profiles),{status:200,headers:{'Content-Type':'application/json'}});
       const profile=await created.json();

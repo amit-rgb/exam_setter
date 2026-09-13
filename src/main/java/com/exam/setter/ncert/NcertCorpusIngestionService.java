@@ -41,9 +41,7 @@ public class NcertCorpusIngestionService {
     private final String defaultCorpusVersion;
 
     public NcertCorpusIngestionService(
-            ObjectMapper objectMapper,
-            VectorStore vectorStore,
-            NcertCorpusRepository repository,
+            ObjectMapper objectMapper, VectorStore vectorStore, NcertCorpusRepository repository,
             @Value("${app.ncert.ingestion.root:./NCERT}") String root,
             @Value("${app.ncert.ingestion.manifest:./NCERT/manifest.json}") String manifest,
             @Value("${app.ncert.ingestion.fail-fast:false}") boolean failFast,
@@ -69,7 +67,6 @@ public class NcertCorpusIngestionService {
         if (!Files.isRegularFile(manifestPath)) throw new IOException("NCERT manifest not found: " + manifestPath);
         NcertCorpusManifest manifest = objectMapper.readValue(manifestPath.toFile(), NcertCorpusManifest.class);
         validateManifest(manifest);
-
         String corpusVersion = blankToDefault(manifest.corpusVersion(), defaultCorpusVersion);
         int completed = 0, skipped = 0, failed = 0, chunks = 0;
         for (NcertCorpusManifest.Entry entry : manifest.entries()) {
@@ -104,7 +101,6 @@ public class NcertCorpusIngestionService {
     private Outcome ingestEntry(NcertCorpusManifest.Entry entry, String corpusVersion) throws Exception {
         Path pdf = safeResolve(entry.fileName());
         if (!Files.isRegularFile(pdf)) throw new IOException("NCERT PDF not found: " + pdf);
-
         String actualHash = sha256(pdf);
         NcertCorpusRepository.State previous = repository.find(entry.documentKey()).orElse(null);
         if (previous != null && "COMPLETED".equals(previous.status()) && actualHash.equalsIgnoreCase(previous.contentHash())
@@ -115,8 +111,7 @@ public class NcertCorpusIngestionService {
         if (entry.contentHash() != null && !entry.contentHash().isBlank() && !actualHash.equalsIgnoreCase(entry.contentHash())) {
             throw new IOException("Manifest SHA-256 mismatch for " + entry.fileName() + ": expected " + entry.contentHash() + ", actual " + actualHash);
         }
-
-        deleteExistingChunks(entry.documentKey(), previous == null ? 0 : previous.chunkCount());
+        if (previous != null) deleteExistingChunks(entry.documentKey(), previous.chunkVersion(), previous.chunkCount());
         repository.start(entry, corpusVersion, actualHash, chunkVersion);
         try {
             int count = indexPdf(entry, corpusVersion, actualHash, pdf);
@@ -132,7 +127,6 @@ public class NcertCorpusIngestionService {
         TokenTextSplitter splitter = new TokenTextSplitter(chunkSize, chunkOverlap, 10, 5000, true);
         List<Document> batch = new ArrayList<>(batchSize);
         int chunkIndex = 0;
-
         try (PDDocument document = Loader.loadPDF(pdf.toFile())) {
             PDFTextStripper stripper = new PDFTextStripper();
             for (int page = 1; page <= document.getNumberOfPages(); page++) {
@@ -140,7 +134,6 @@ public class NcertCorpusIngestionService {
                 stripper.setEndPage(page);
                 String text = normalize(stripper.getText(document));
                 if (text.isBlank()) continue;
-
                 Document pageDocument = new Document(text, Map.of("pageNumber", page));
                 for (Document chunk : splitter.apply(List.of(pageDocument))) {
                     Map<String, Object> metadata = new HashMap<>(chunk.getMetadata());
@@ -163,13 +156,9 @@ public class NcertCorpusIngestionService {
                     metadata.put("contentHash", hash);
                     metadata.put("chunkIndex", chunkIndex);
                     metadata.put("contentScope", blankToDefault(entry.contentScope(), "CHAPTER"));
-                    String id = deterministicChunkId(entry.documentKey(), chunkIndex);
-                    batch.add(new Document(id, chunk.getText(), metadata));
+                    batch.add(new Document(deterministicChunkId(entry.documentKey(), chunkVersion, chunkIndex), chunk.getText(), metadata));
                     chunkIndex++;
-                    if (batch.size() >= batchSize) {
-                        vectorStore.add(batch);
-                        batch.clear();
-                    }
+                    if (batch.size() >= batchSize) { vectorStore.add(batch); batch.clear(); }
                 }
             }
         }
@@ -178,13 +167,11 @@ public class NcertCorpusIngestionService {
         return chunkIndex;
     }
 
-    private void deleteExistingChunks(String documentKey, int previousCount) {
+    private void deleteExistingChunks(String documentKey, String version, int previousCount) {
         if (previousCount <= 0) return;
         List<String> ids = new ArrayList<>(previousCount);
-        for (int i = 0; i < previousCount; i++) ids.add(deterministicChunkId(documentKey, i));
-        for (int i = 0; i < ids.size(); i += batchSize) {
-            vectorStore.delete(ids.subList(i, Math.min(i + batchSize, ids.size())));
-        }
+        for (int i = 0; i < previousCount; i++) ids.add(deterministicChunkId(documentKey, version, i));
+        for (int i = 0; i < ids.size(); i += batchSize) vectorStore.delete(ids.subList(i, Math.min(i + batchSize, ids.size())));
     }
 
     private Path safeResolve(String fileName) throws IOException {
@@ -196,28 +183,22 @@ public class NcertCorpusIngestionService {
 
     private void validateEntry(NcertCorpusManifest.Entry e) {
         if (e == null || blank(e.documentKey()) || blank(e.fileName()) || blank(e.subject()) || blank(e.bookCode())
-                || blank(e.language()) || blank(e.classLevel())) {
-            throw new IllegalArgumentException("Manifest entry is missing a required field");
-        }
+                || blank(e.language()) || blank(e.classLevel())) throw new IllegalArgumentException("Manifest entry is missing a required field");
         if (e.targetLevels() != null && e.targetLevels().stream().anyMatch(this::blank)) {
             throw new IllegalArgumentException("Manifest targetLevels contains a blank value: " + e.documentKey());
         }
     }
 
-    private String deterministicChunkId(String key, int index) {
-        return "ncert-" + sha256Text(key + "|" + chunkVersion + "|" + index).substring(0, 48);
+    private String deterministicChunkId(String key, String version, int index) {
+        return "ncert-" + sha256Text(key + "|" + version + "|" + index).substring(0, 48);
     }
-
     private String sha256(Path file) throws IOException { return digest(Files.readAllBytes(file)); }
     private String sha256Text(String value) { return digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8)); }
     private String digest(byte[] bytes) {
         try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes)); }
         catch (Exception e) { throw new IllegalStateException("SHA-256 unavailable", e); }
     }
-
-    private String normalize(String text) {
-        return text.replace('\u0000', ' ').replaceAll("[ \\t]+", " ").replaceAll("\\n{3,}", "\\n\\n").trim();
-    }
+    private String normalize(String text) { return text.replace('\u0000', ' ').replaceAll("[ \\t]+", " ").replaceAll("\\n{3,}", "\\n\\n").trim(); }
     private String upper(String value) { return value == null ? "" : value.trim().toUpperCase(); }
     private boolean blank(String value) { return value == null || value.isBlank(); }
     private String blankToDefault(String value, String fallback) { return blank(value) ? fallback : value; }

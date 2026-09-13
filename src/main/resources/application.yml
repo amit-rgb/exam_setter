@@ -28,6 +28,10 @@ spring:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
 
+  sql:
+    init:
+      mode: always
+
   ai:
     openai:
       api-key: ${OPENAI_API_KEY}
@@ -56,3 +60,14 @@ server:
 app:
   verification:
     enabled: ${APP_VERIFICATION_ENABLED:false}
+  ncert:
+    ingestion:
+      enabled: ${NCERT_INGESTION_ENABLED:false}
+      root: ${NCERT_CORPUS_ROOT:./NCERT}
+      manifest: ${NCERT_CORPUS_MANIFEST:./NCERT/manifest.json}
+      fail-fast: ${NCERT_INGESTION_FAIL_FAST:false}
+      batch-size: ${NCERT_INGESTION_BATCH_SIZE:50}
+      chunk-size: ${NCERT_CHUNK_SIZE:500}
+      chunk-overlap: ${NCERT_CHUNK_OVERLAP:80}
+      chunk-version: ${NCERT_CHUNK_VERSION:v1}
+      corpus-version: ${NCERT_CORPUS_VERSION:2026}

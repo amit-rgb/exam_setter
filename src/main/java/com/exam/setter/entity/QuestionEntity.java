@@ -49,6 +49,9 @@ public class QuestionEntity {
     private int marks;
     private String topic;
 
+    @Column(columnDefinition = "TEXT")
+    private String sourceCitationsJson;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private ModerationStatus moderationStatus;
@@ -57,7 +60,6 @@ public class QuestionEntity {
     @Builder.Default
     private boolean includedInPaper = false;
 
-    // Single Reviewer Audit Fields
     private String reviewerId;
     private String reviewerComments;
     private Instant reviewedAt;

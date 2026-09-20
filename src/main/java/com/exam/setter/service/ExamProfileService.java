@@ -2,6 +2,7 @@ package com.exam.setter.service;
 
 import com.exam.setter.dto.ExamProfileRequest;
 import com.exam.setter.entity.ExamProfileEntity;
+import com.exam.setter.model.KnowledgeSource;
 import com.exam.setter.repository.ExamProfileRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -30,6 +31,13 @@ public class ExamProfileService {
         validateDistribution("questionTypeDistribution", request.questionTypeDistribution());
         validateDistribution("topicDistribution", request.topicDistribution());
 
+        String knowledgeSource = normalizeKnowledgeSource(request.knowledgeSource());
+        if (knowledgeSource.equals(KnowledgeSource.NCERT.name()) || knowledgeSource.equals(KnowledgeSource.MIXED.name())) {
+            if (request.ncertChapterNumber() != null && request.ncertChapterNumber() < 1) {
+                throw new IllegalArgumentException("NCERT chapter number must be positive.");
+            }
+        }
+
         ExamProfileEntity entity = repository.findByExamIdIgnoreCase(request.examId())
                 .orElseGet(ExamProfileEntity::new);
         Instant now = Instant.now();
@@ -39,7 +47,7 @@ public class ExamProfileService {
         entity.setExamName(request.examName().trim());
         entity.setSubject(blankToNull(request.subject()));
         entity.setPaperName(blankToNull(request.paperName()));
-        entity.setKnowledgeSource(blankToDefault(request.knowledgeSource(), "NCERT"));
+        entity.setKnowledgeSource(knowledgeSource);
         entity.setCorpusVersion(blankToNull(request.corpusVersion()));
         entity.setNcertBookCode(blankToNull(request.ncertBookCode()));
         entity.setNcertChapterNumber(request.ncertChapterNumber());
@@ -89,6 +97,15 @@ public class ExamProfileService {
         );
     }
 
+    private String normalizeKnowledgeSource(String value) {
+        String normalized = blankToDefault(value, KnowledgeSource.NCERT.name());
+        try {
+            return KnowledgeSource.valueOf(normalized).name();
+        } catch (IllegalArgumentException ex) {
+            throw new IllegalArgumentException("Unsupported knowledge source: " + value + ". Use NCERT, MIXED or USER_UPLOAD.");
+        }
+    }
+
     private void validateDistribution(String name, Map<String, Double> distribution) {
         if (distribution == null || distribution.isEmpty()) return;
         double total = 0;
@@ -109,12 +126,12 @@ public class ExamProfileService {
     }
 
     private List<String> readList(String json) {
-        try { return json == null ? List.of() : objectMapper.readValue(json, new TypeReference<>() {}); }
+        try { return json == null ? List.of() : objectMapper.readValue(json, new TypeReference<List<String>>() {}); }
         catch (Exception e) { return List.of(); }
     }
 
     private Map<String, Double> readMap(String json) {
-        try { return json == null ? Map.of() : objectMapper.readValue(json, new TypeReference<>() {}); }
+        try { return json == null ? Map.of() : objectMapper.readValue(json, new TypeReference<Map<String, Double>>() {}); }
         catch (Exception e) { return Map.of(); }
     }
 

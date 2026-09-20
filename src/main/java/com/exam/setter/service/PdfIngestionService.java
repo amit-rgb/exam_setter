@@ -110,8 +110,16 @@ public class PdfIngestionService {
     }
 
     private String sha256Hex(String value) throws IOException {
-        try { return MessageDigest.getInstance("SHA-256").digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8)).length == 32
-                    ? java.util.HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8))) : value; }
-        catch (Exception ex) { throw new IOException("Unable to create document key", ex); }
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            return java.util.HexFormat.of().formatHex(digest);
+        } catch (Exception ex) {
+            throw new IOException("Unable to create document key", ex);
+        }
+    }
+
+    List<String> parseTargetLevelsForTest(String rawTargetLevels) {
+        return parseTargetLevels(rawTargetLevels);
     }
 }

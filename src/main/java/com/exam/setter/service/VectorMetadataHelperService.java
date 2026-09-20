@@ -15,42 +15,43 @@ public class VectorMetadataHelperService {
     }
 
     /**
-     * Fetches distinct file names ingested for the given subject and target levels.
-     *
-     * New vectors store targetLevels as a JSON array. Legacy vectors may only have
-     * the scalar targetLevel field, so both representations are matched.
+     * Returns distinct uploaded files for the requested subject/levels.
+     * Supports current comma-separated targetLevels plus older JSON-array/scalar data.
      */
     public List<String> getDistinctFilesForSubjectAndLevels(String subject, List<String> targetLevels) {
-        String baseSql = """
-            SELECT DISTINCT (metadata->>'fileName') as filename
+        StringBuilder sql = new StringBuilder("""
+            SELECT DISTINCT (metadata->>'fileName') AS filename
             FROM document_embeddings
-            WHERE LOWER(metadata->>'subject') = :subject
-              AND metadata->>'fileName' IS NOT NULL
-        """;
+            WHERE metadata->>'fileName' IS NOT NULL
+              AND COALESCE(metadata->>'source', 'USER_UPLOAD') = 'USER_UPLOAD'
+              AND LOWER(metadata->>'subject') = ?
+            """);
+        List<Object> params = new java.util.ArrayList<>();
+        params.add(subject.trim().toLowerCase());
 
         if (targetLevels != null && !targetLevels.isEmpty()) {
-            baseSql += """
+            sql.append("""
                 AND EXISTS (
                     SELECT 1
-                    FROM json_array_elements_text(
-                        CASE
-                            WHEN json_typeof(metadata->'targetLevels') = 'array'
-                                THEN metadata->'targetLevels'
-                            ELSE json_build_array(metadata->>'targetLevel')
-                        END
-                    ) AS level(value)
-                    WHERE UPPER(level.value) IN (:levels)
+                    FROM (
+                        SELECT json_array_elements_text(metadata->'targetLevels') AS value
+                        WHERE json_typeof(metadata->'targetLevels') = 'array'
+                        UNION ALL
+                        SELECT TRIM(value)
+                        FROM unnest(string_to_array(
+                            COALESCE(metadata->>'targetLevels', metadata->>'targetLevel', ''), ','
+                        )) AS value
+                        WHERE json_typeof(metadata->'targetLevels') <> 'array'
+                           OR metadata->'targetLevels' IS NULL
+                    ) levels
+                    WHERE UPPER(levels.value) = ANY(?::text[])
                 )
-                """;
-            return jdbcClient.sql(baseSql)
-                    .param("subject", subject.trim().toLowerCase())
-                    .param("levels", targetLevels.stream().map(String::toUpperCase).toList())
-                    .query(String.class)
-                    .list();
+                """);
+            params.add(targetLevels.stream().map(String::toUpperCase).toArray(String[]::new));
         }
 
-        return jdbcClient.sql(baseSql)
-                .param("subject", subject.trim().toLowerCase())
+        return jdbcClient.sql(sql.toString())
+                .params(params.toArray())
                 .query(String.class)
                 .list();
     }

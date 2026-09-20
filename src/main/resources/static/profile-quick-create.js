@@ -5,6 +5,28 @@
   const normalize=value=>String(value||'').trim().toUpperCase();
   const levelLabel=level=>String(level||'').replace(/^CLASS_/,'Class ');
   const profileLevels=profile=>{try{const parsed=JSON.parse(profile.targetLevelsJson||'[]');return Array.isArray(parsed)?parsed.map(normalize):[]}catch{return[]}};
+  const selectedLevels=()=>[...(document.getElementById('blueprintLevels')?.selectedOptions||[])].map(o=>normalize(o.value)).filter(Boolean);
+  const saveProfileContext=(profile)=>{
+    const levels=profileLevels(profile);
+    const next={...context(),examId:profile.examId,knowledgeSource:normalize(profile.knowledgeSource||'NCERT'),corpusVersion:profile.corpusVersion||'',targetLevels:levels};
+    saveContext(next);
+    const subject=document.getElementById('blueprintSubject');
+    const source=document.getElementById('knowledgeSource');
+    const version=document.getElementById('corpusVersion');
+    const title=document.getElementById('examTitle');
+    const duration=document.getElementById('examDuration');
+    if(subject&&profile.subject)subject.value=profile.subject;
+    if(source)source.value=normalize(profile.knowledgeSource||'NCERT');
+    if(version&&profile.corpusVersion)version.value=profile.corpusVersion;
+    if(title)title.value=profile.paperName||profile.examName||title.value;
+    if(duration&&profile.durationMinutes)duration.value=profile.durationMinutes;
+    if(document.getElementById('blueprintLevels')&&levels.length){
+      const set=new Set(levels);
+      [...document.getElementById('blueprintLevels').options].forEach(o=>o.selected=set.has(normalize(o.value)));
+    }
+    window.dispatchEvent(new CustomEvent('assessment:profile-applied',{detail:profile}));
+  };
+  window.applyExamProfileContext=saveProfileContext;
   let profileRequest;
 
   async function ensureProfile(){
@@ -15,7 +37,7 @@
       if(!response.ok)return response;
       const profiles=await response.clone().json().catch(()=>[]);
       const subject=normalize(document.getElementById('blueprintSubject')?.value||ctx.subject);
-      const levels=[...(document.getElementById('blueprintLevels')?.selectedOptions||[])].map(o=>normalize(o.value)).filter(Boolean);
+      const levels=selectedLevels();
       const source=normalize(document.getElementById('knowledgeSource')?.value||ctx.knowledgeSource||'NCERT');
       const matches=profiles.filter(p=>normalize(p.knowledgeSource||'NCERT')===source&&(!p.subject||normalize(p.subject)===subject));
       const exact=matches.find(p=>{
@@ -27,7 +49,7 @@
         return !pLevels.length || levels.some(level=>pLevels.includes(level));
       });
       if(compatible){
-        saveContext({...ctx,examId:compatible.examId,knowledgeSource:source,targetLevels:levels});
+        saveProfileContext(compatible);
         return new Response(JSON.stringify(profiles),{status:200,headers:{'Content-Type':'application/json'}});
       }
       if(!subject||!levels.length)return new Response(JSON.stringify(profiles),{status:200,headers:{'Content-Type':'application/json'}});
@@ -61,7 +83,7 @@
       const created=await originalFetch('/api/exam-profiles',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
       if(!created.ok)return new Response(JSON.stringify(profiles),{status:200,headers:{'Content-Type':'application/json'}});
       const profile=await created.json();
-      saveContext({...ctx,examId:profile.examId,knowledgeSource:source,targetLevels:levels});
+      saveProfileContext(profile);
       return new Response(JSON.stringify([...profiles,profile]),{status:200,headers:{'Content-Type':'application/json'}});
     })().finally(()=>{profileRequest=null});
     return profileRequest;

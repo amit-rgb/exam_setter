@@ -54,14 +54,13 @@ public class ExamAwareQuestionGenerationService {
         Integer chapterNumber = request.chapterNumber() != null ? request.chapterNumber() : profile.getNcertChapterNumber();
 
         List<Document> knowledge = retrieveKnowledge(request, source, corpusVersion, bookCode, chapterNumber);
-        if (knowledge.isEmpty()) {
-            throw new IllegalArgumentException("No usable knowledge context is available for the selected subject, target levels and source policy.");
-        }
+        if (knowledge.isEmpty()) throw new IllegalArgumentException("No usable knowledge context is available for the selected subject, target levels and source policy.");
+
         List<Document> questionBankEvidence = retrieveQuestionBankEvidence(request);
         List<Document> syllabusEvidence = retrieveSyllabusEvidence(request);
         List<Document> pyqs = retrievePyqs(request);
 
-        String knowledgeText = join(knowledge, "\n\n---\n\n");
+        String knowledgeText = join(questionBankEvidence.isEmpty() ? knowledge : knowledge, "\n\n---\n\n");
         String questionBankText = join(questionBankEvidence, "\n--- QUESTION BANK ---\n");
         String syllabusText = join(syllabusEvidence, "\n--- SYLLABUS ---\n");
         String pyqText = join(pyqs, "\n--- PYQ ---\n");
@@ -87,15 +86,12 @@ public class ExamAwareQuestionGenerationService {
                 String normalized = normalizeQuestion(q.questionText());
                 if (!normalizedAccepted.add(normalized)) continue;
                 if (similarityGuard.isTooSimilarToPyq(q.questionText(), request.examId())) continue;
-                if (accepted.stream().anyMatch(existing ->
-                        lexicalSimilarity(existing.questionText(), q.questionText()) >= 0.86)) continue;
+                if (accepted.stream().anyMatch(existing -> lexicalSimilarity(existing.questionText(), q.questionText()) >= 0.86)) continue;
                 accepted.add(withCitations(q, mergeCitations(citations, evidenceCitations)));
             }
         }
 
-        if (accepted.size() < request.count()) {
-            throw new IllegalStateException("Exam-aware validation rejected too many generated questions; regenerate the section.");
-        }
+        if (accepted.size() < request.count()) throw new IllegalStateException("Exam-aware validation rejected too many generated questions; regenerate the section.");
         return accepted;
     }
 

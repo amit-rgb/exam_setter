@@ -45,7 +45,7 @@ public class ExamPaperService {
         paperEntity.setTotalMarks(computedTotalMarks); paperEntity.setSections(sectionEntities); return examPaperRepository.save(paperEntity);
     }
 
-    private List<GeneratedQuestion> generate(QuestionGenerationRequest request) { return request.examId() == null || request.examId().isBlank() ? questionGeneratorService.generateQuestions(request) : examAwareGenerator.generate(request); }
+    private List<GeneratedQuestion> generate(QuestionGenerationRequest request) { return request.knowledgeSources() != null && !request.knowledgeSources().isEmpty() ? examAwareGenerator.generate(request) : (request.examId() == null || request.examId().isBlank() ? questionGeneratorService.generateQuestions(request) : examAwareGenerator.generate(request)); }
 
     private void validateBlueprint(ExamPaperBlueprintRequest request) {
         if (request.sections().stream().mapToInt(SectionBlueprint::questionCount).sum() > 100) throw new IllegalArgumentException("A single paper may request at most 100 questions.");

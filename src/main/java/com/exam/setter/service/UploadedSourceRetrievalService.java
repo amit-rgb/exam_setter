@@ -4,6 +4,8 @@ import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.stereotype.Service;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -11,6 +13,7 @@ import java.util.Map;
 
 @Service
 public class UploadedSourceRetrievalService {
+    private static final Logger log = LoggerFactory.getLogger(UploadedSourceRetrievalService.class);
 
     private static final List<String> KNOWLEDGE_TYPES = List.of("STUDY_NOTES", "REFERENCE", "TEXTBOOK");
     private final VectorStore vectorStore;
@@ -75,6 +78,7 @@ public class UploadedSourceRetrievalService {
          * those representations in Java makes retrieval backward compatible.
          */
         int retrievalK = Math.max(Math.max(1, topK), Math.min(200, Math.max(20, topK * 4)));
+        log.info("Uploaded retrieval: subject={}, levels={}, sourceTypes={}, topK={}, threshold={}", subject, targetLevels, sourceTypes, topK, threshold);
         List<Document> candidates = vectorStore.similaritySearch(SearchRequest.builder()
                 .query(query == null || query.isBlank() ? subject + " concepts examples" : query)
                 .topK(retrievalK)
@@ -83,13 +87,14 @@ public class UploadedSourceRetrievalService {
                 .build());
 
         List<String> levels = normalizeLevels(targetLevels);
-        if (levels.isEmpty()) return candidates.stream().limit(Math.max(1, topK)).toList();
+        if (levels.isEmpty()) { log.info("Uploaded retrieval candidates={} (no level filter)", candidates.size()); return candidates.stream().limit(Math.max(1, topK)).toList(); }
 
         List<Document> matched = candidates.stream()
                 .filter(document -> matchesAnyTargetLevel(document, levels))
                 .limit(Math.max(1, topK))
                 .toList();
 
+        log.info("Uploaded retrieval candidates={}, matchedLevels={}, requestedLevels={}", candidates.size(), matched.size(), levels);
         return matched;
     }
 

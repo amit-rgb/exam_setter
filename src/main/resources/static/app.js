@@ -4,7 +4,7 @@ const esc=v=>String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>
 const readContext=()=>{try{return JSON.parse(sessionStorage.getItem('examContext')||'{}')}catch{return {}}};
 const readPaper=()=>{try{return JSON.parse(sessionStorage.getItem('examPaper')||'null')}catch{return null}};
 const savePaper=p=>sessionStorage.setItem('examPaper',JSON.stringify(p));
-const apiJson=async r=>{const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.message||d.error||d.errorMessage||'Request failed');return d};
+const apiJson=async r=>{const d=await r.json().catch(()=>({}));if(!r.ok){console.error('API request failed',r.status,d);throw new Error((d.message||d.error||d.errorMessage||'Request failed')+' | Diagnostics: /diagnostics.html');}return d};
 function alertBox(msg,error=false){const b=document.getElementById('alertBox');if(!b)return;b.textContent=msg;b.className=`mb-5 rounded-2xl border px-4 py-3 text-sm font-semibold ${error?'border-rose-200 bg-rose-50 text-rose-700':'border-emerald-200 bg-emerald-50 text-emerald-700'}`;b.classList.remove('hidden');window.scrollTo({top:0,behavior:'smooth'})}
 function navigateWorkflow(t){location.href=t;return false}
 function initMobileWorkflow(){document.getElementById('mobileWorkflow')?.addEventListener('click',e=>{if(e.target.closest('a'))e.currentTarget.open=false})}

@@ -113,24 +113,34 @@ public class ExamAwareQuestionGenerationService {
         List<GeneratedQuestion> accepted = new ArrayList<>();
         Set<String> normalizedAccepted = new HashSet<>();
 
-        for (int attempt = 0; attempt < 4 && accepted.size() < request.count(); attempt++) {
+        for (int attempt = 0; attempt < 6 && accepted.size() < request.count(); attempt++) {
             int remaining = request.count() - accepted.size();
+            int requestedThisAttempt = Math.max(remaining, Math.min(remaining * 2, request.count() + 4));
             String response = chatClient.prompt().user(
-                    buildPrompt(request, constraints, sources, pyqText, teacherText, otherText, syllabusText, ncertText, remaining, citations)
+                    buildPrompt(request, constraints, sources, pyqText, teacherText, otherText, syllabusText, ncertText, requestedThisAttempt, citations)
             ).call().content();
 
             for (GeneratedQuestion q : parse(response)) {
                 if (accepted.size() >= request.count() || q.questionText() == null || q.questionText().isBlank()) break;
                 String normalized = normalizeQuestion(q.questionText());
-                if (!normalizedAccepted.add(normalized)) continue;
-                if (sources.contains(PYQ) && similarityGuard.isTooSimilarToPyq(q.questionText(), request.examId())) continue;
-                if (accepted.stream().anyMatch(existing -> lexicalSimilarity(existing.questionText(), q.questionText()) >= 0.86)) continue;
+                if (!normalizedAccepted.add(normalized)) {
+                    log.debug("Rejected duplicate generated question: {}", q.questionText());
+                    continue;
+                }
+                if (sources.contains(PYQ) && similarityGuard.isTooSimilarToPyq(q.questionText(), request.examId())) {
+                    log.debug("Rejected question as too similar to PYQ: {}", q.questionText());
+                    continue;
+                }
+                if (accepted.stream().anyMatch(existing -> lexicalSimilarity(existing.questionText(), q.questionText()) >= 0.90)) {
+                    log.debug("Rejected near-duplicate generated question: {}", q.questionText());
+                    continue;
+                }
                 accepted.add(withCitations(q, citations));
             }
         }
 
         if (accepted.size() < request.count()) {
-            throw new IllegalStateException("Source-grounded validation rejected too many generated questions; broaden the selected source material or regenerate the section.");
+            throw new IllegalStateException("Unable to produce enough distinct source-grounded questions after multiple generation attempts. Add more source material, choose a broader topic, or regenerate the section.");
         }
         diagnosticService.recordSuccess(Map.of("subject", request.subject(), "targetLevels", request.targetLevels(), "selectedSources", sources, "retrievedSyllabus", syllabus.size(), "retrievedTeacherNotes", teacherNotes.size(), "retrievedPyq", pyqs.size(), "retrievedOther", other.size(), "retrievedNcert", ncert.size(), "generatedQuestions", accepted.size()));
         log.info("Question generation completed: generatedQuestions={}, sources={}", accepted.size(), sources);

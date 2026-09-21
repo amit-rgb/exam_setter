@@ -123,8 +123,15 @@ public class ExamAwareQuestionGenerationService {
             ).call().content();
 
             List<GeneratedQuestion> parsedQuestions = parse(response);
-            log.info("Generation attempt {}: requested={}, parsed={}, acceptedBefore={}",
-                    attempt + 1, requestedThisAttempt, parsedQuestions.size(), accepted.size());
+            long validTextQuestions = parsedQuestions.stream()
+                    .filter(q -> q.questionText() != null && !q.questionText().isBlank())
+                    .count();
+            log.info("Generation attempt {}: requested={}, parsed={}, validQuestionText={}, acceptedBefore={}",
+                    attempt + 1, requestedThisAttempt, parsedQuestions.size(), validTextQuestions, accepted.size());
+            if (validTextQuestions == 0 && !parsedQuestions.isEmpty()) {
+                log.warn("LLM returned {} question objects but none contained questionText/question; response={}",
+                        parsedQuestions.size(), response);
+            }
 
             for (GeneratedQuestion q : parsedQuestions) {
                 if (accepted.size() >= request.count() || q.questionText() == null || q.questionText().isBlank()) break;
@@ -223,6 +230,13 @@ public class ExamAwareQuestionGenerationService {
                   reproduce, or lightly modify an existing question or answer.
                 - NCERT, when supplied by a backward-compatible API client, is authoritative textbook content.
                 - Every question in this attempt must be materially different from the previously accepted questions.
+                - For SYLLABUS-only generation, the syllabus is the boundary of the curriculum, not the
+                  answer bank. Questions may use standard subject knowledge to answer concepts explicitly
+                  listed in the syllabus.
+                - The JSON property names MUST be exactly:
+                  questionText, questionType, options, correctAnswer, explanation, difficulty, marks, topic.
+                - For this MCQ request, questionType MUST be "MCQ", options MUST contain exactly 4 strings,
+                  and correctAnswer MUST be one of A, B, C, D.
 
                 SYLLABUS:
                 %s
@@ -239,10 +253,12 @@ public class ExamAwareQuestionGenerationService {
                 NCERT:
                 %s
 
-                Generate only questions that can be grounded in the selected source material.
+                Generate questions within the selected source boundaries.
+                When SYLLABUS is selected without factual sources, use it strictly as curriculum scope
+                and use standard subject knowledge to formulate and answer questions within that scope.
                 When multiple sources are selected, combine them: use syllabus for scope, teacher/other
                 material for factual grounding, and PYQs for examination pattern and coverage.
-                If a selected source has no material, do not silently replace it with an unselected source.
+                If a selected factual source has no material, do not silently replace it with an unselected source.
                 For MCQ use exactly four options and exactly one correct answer.
                 Return raw JSON only.
 

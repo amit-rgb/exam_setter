@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Assessment Studio · Diagnostics</title><script src="https://cdn.tailwindcss.com"></script><link rel="stylesheet" href="app.css"></head>
+<body class="min-h-screen bg-slate-50 text-slate-900">
+<header class="border-b bg-white"><div class="mx-auto flex max-w-6xl items-center justify-between px-4 py-4"><a href="index.html" class="font-extrabold">Assessment Studio</a><a href="blueprint.html" class="text-sm font-bold text-indigo-700">← Blueprint</a></div></header>
+<main class="mx-auto max-w-6xl px-4 py-8"><div class="mb-6"><div class="text-xs font-black uppercase tracking-wider text-indigo-600">Troubleshooting</div><h1 class="mt-2 text-3xl font-black">Generation diagnostics</h1><p class="mt-2 text-sm text-slate-600">This page shows the latest generation attempt, including selected sources and retrieval counts.</p></div>
+<div id="status" class="mb-4 rounded-xl border bg-white p-4 text-sm">Loading…</div><pre id="diagnostic" class="overflow-auto rounded-2xl border bg-slate-950 p-5 text-xs leading-6 text-slate-100"></pre>
+<button id="refresh" class="mt-4 rounded-xl bg-indigo-600 px-5 py-3 text-sm font-bold text-white">Refresh diagnostics</button></main>
+<script>
+async function load(){
+ const status=document.getElementById('status'), out=document.getElementById('diagnostic');
+ try{
+   const r=await fetch('/api/diagnostics/generation?ts='+Date.now());
+   const d=await r.json();
+   status.textContent='Latest status: '+(d.status||'UNKNOWN')+' · '+(d.timestamp||'');
+   out.textContent=JSON.stringify(d,null,2);
+ }catch(e){status.textContent='Unable to load diagnostics: '+e.message}
+}
+document.getElementById('refresh').onclick=load;load();
+</script></body></html>

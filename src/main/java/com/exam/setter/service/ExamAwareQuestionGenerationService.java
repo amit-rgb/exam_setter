@@ -383,4 +383,4 @@ public class ExamAwareQuestionGenerationService {
                 + "; visual formats: " + visualSummary
                 + ". Match the relative variety and coverage where possible. Never copy PYQ wording.";
     }
-
+}

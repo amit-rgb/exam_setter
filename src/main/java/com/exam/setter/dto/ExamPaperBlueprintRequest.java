@@ -17,7 +17,7 @@ public record ExamPaperBlueprintRequest(
         @NotEmpty @Size(max = 10) List<@Valid SectionBlueprint> sections,
         @Size(max = 200) String examId,
         @Size(max = 50) String knowledgeSource,
-        @Size(max = 4) List<@NotBlank @Size(max = 50) String> knowledgeSources,
+        @Size(max = 5) List<@NotBlank @Size(max = 50) String> knowledgeSources,
         @Size(max = 50) String corpusVersion,
         @Size(max = 100) String ncertBookCode,
         @Min(1) @Max(1000) Integer ncertChapterNumber

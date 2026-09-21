@@ -117,10 +117,16 @@ public class ExamAwareQuestionGenerationService {
             int remaining = request.count() - accepted.size();
             int requestedThisAttempt = Math.max(remaining, Math.min(remaining * 2, request.count() + 4));
             String response = chatClient.prompt().user(
-                    buildPrompt(request, constraints, sources, pyqText, teacherText, otherText, syllabusText, ncertText, requestedThisAttempt, citations)
+                    buildPrompt(request, constraints, sources, pyqText, teacherText, otherText, syllabusText, ncertText,
+                            requestedThisAttempt, citations, attempt + 1,
+                            accepted.stream().map(GeneratedQuestion::questionText).toList())
             ).call().content();
 
-            for (GeneratedQuestion q : parse(response)) {
+            List<GeneratedQuestion> parsedQuestions = parse(response);
+            log.info("Generation attempt {}: requested={}, parsed={}, acceptedBefore={}",
+                    attempt + 1, requestedThisAttempt, parsedQuestions.size(), accepted.size());
+
+            for (GeneratedQuestion q : parsedQuestions) {
                 if (accepted.size() >= request.count() || q.questionText() == null || q.questionText().isBlank()) break;
                 String normalized = normalizeQuestion(q.questionText());
                 if (!normalizedAccepted.add(normalized)) {
@@ -138,6 +144,8 @@ public class ExamAwareQuestionGenerationService {
                 accepted.add(withCitations(q, citations));
             }
         }
+
+        log.info("Generation finished after attempts: requested={}, accepted={}", request.count(), accepted.size());
 
         if (accepted.size() < request.count()) {
             throw new IllegalStateException("Unable to produce enough distinct source-grounded questions after multiple generation attempts. Add more source material, choose a broader topic, or regenerate the section.");
@@ -188,7 +196,8 @@ public class ExamAwareQuestionGenerationService {
 
     private String buildPrompt(QuestionGenerationRequest request, Map<String, Object> constraints,
                                List<String> sources, String pyqText, String teacherText, String otherText,
-                               String syllabusText, String ncertText, int count, List<String> citations) {
+                               String syllabusText, String ncertText, int count, List<String> citations,
+                               int attempt, List<String> previouslyAccepted) {
         return """
                 You are an expert examination question setter.
                 Generate exactly %d NEW questions.
@@ -204,10 +213,16 @@ public class ExamAwareQuestionGenerationService {
 
                 SOURCE RULES:
                 - TEACHER_NOTES and OTHER are factual knowledge sources.
-                - SYLLABUS defines the permitted curriculum scope. Do not invent content outside it.
+                - SYLLABUS defines the permitted curriculum scope.
+                - When SYLLABUS is the only selected source, treat the syllabus as a SCOPE document,
+                  not as a factual knowledge document. Use your subject-matter knowledge to create
+                  valid questions strictly within the topics explicitly covered by the syllabus.
+                  Do not require the syllabus text itself to contain the answer.
+                - When other factual sources are selected, use their retrieved content for factual grounding.
                 - PREVIOUS_YEAR_QUESTION_PAPER is pattern and concept evidence only. Never copy, paraphrase,
                   reproduce, or lightly modify an existing question or answer.
                 - NCERT, when supplied by a backward-compatible API client, is authoritative textbook content.
+                - Every question in this attempt must be materially different from the previously accepted questions.
 
                 SYLLABUS:
                 %s
@@ -233,6 +248,12 @@ public class ExamAwareQuestionGenerationService {
 
                 RETRIEVAL SOURCES:
                 %s
+
+                GENERATION ATTEMPT:
+                %d
+
+                PREVIOUSLY ACCEPTED QUESTIONS:
+                %s
                 """.formatted(
                 count, sources, constraints, request.subject(), request.targetLevels(),
                 request.topic() == null ? "" : request.topic(), request.questionType().name(),
@@ -242,7 +263,9 @@ public class ExamAwareQuestionGenerationService {
                 otherText.isBlank() ? "No other reference material selected or indexed." : otherText,
                 pyqText.isBlank() ? "No previous-year questions selected or indexed." : pyqText,
                 ncertText.isBlank() ? "No NCERT material selected." : ncertText,
-                citations.isEmpty() ? "None" : String.join("\n", citations));
+                citations.isEmpty() ? "None" : String.join("\n", citations),
+                attempt,
+                previouslyAccepted == null || previouslyAccepted.isEmpty() ? "None" : String.join("\n", previouslyAccepted));
     }
 
     private String join(List<Document> documents, String delimiter) {

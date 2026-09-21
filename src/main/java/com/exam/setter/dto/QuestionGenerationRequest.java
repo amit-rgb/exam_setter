@@ -19,17 +19,18 @@ public record QuestionGenerationRequest(
         @Size(max = 200) String examId,
         @Size(max = 200) String topic,
         @Size(max = 50) String knowledgeSource,
+        @Size(max = 4) List<@NotBlank @Size(max = 50) String> knowledgeSources,
         @Size(max = 50) String corpusVersion,
         @Size(max = 100) String bookCode,
         @Min(1) @Max(1000) Integer chapterNumber
 ) {
     public QuestionGenerationRequest(String subject, List<String> targetLevels, QuestionType questionType,
                                      String difficulty, int count, int marks) {
-        this(subject, targetLevels, questionType, difficulty, count, marks, null, null, null, null, null, null);
+        this(subject, targetLevels, questionType, difficulty, count, marks, null, null, null, List.of(), null, null, null);
     }
 
     public QuestionGenerationRequest(String subject, List<String> targetLevels, QuestionType questionType,
                                      String difficulty, int count, int marks, String examId) {
-        this(subject, targetLevels, questionType, difficulty, count, marks, examId, null, null, null, null, null);
+        this(subject, targetLevels, questionType, difficulty, count, marks, examId, null, null, List.of(), null, null, null);
     }
 }

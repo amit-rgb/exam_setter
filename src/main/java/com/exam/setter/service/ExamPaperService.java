@@ -36,7 +36,7 @@ public class ExamPaperService {
         ExamPaperEntity paperEntity = ExamPaperEntity.builder().title(request.examTitle()).subject(request.subject().trim().toLowerCase()).examId(request.examId() == null ? null : request.examId().trim().toUpperCase()).durationMinutes(request.durationMinutes()).status(PaperStatus.IN_REVIEW).createdAt(Instant.now()).build();
         List<ExamSectionEntity> sectionEntities = new ArrayList<>();
         for (SectionBlueprint section : request.sections()) {
-            QuestionGenerationRequest genRequest = new QuestionGenerationRequest(request.subject(), request.targetLevels(), section.questionType(), section.difficulty(), section.questionCount(), section.marksPerQuestion(), request.examId(), section.topic(), request.knowledgeSource(), request.corpusVersion(), request.ncertBookCode(), request.ncertChapterNumber());
+            QuestionGenerationRequest genRequest = new QuestionGenerationRequest(request.subject(), request.targetLevels(), section.questionType(), section.difficulty(), section.questionCount(), section.marksPerQuestion(), request.examId(), section.topic(), request.knowledgeSource(), request.knowledgeSources(), request.corpusVersion(), request.ncertBookCode(), request.ncertChapterNumber());
             List<GeneratedQuestion> generatedQuestions = generate(genRequest); int sectionMarks = generatedQuestions.size() * section.marksPerQuestion(); computedTotalMarks += sectionMarks;
             ExamSectionEntity sectionEntity = ExamSectionEntity.builder().examPaper(paperEntity).sectionName(section.sectionName()).sectionMarks(sectionMarks).negativeMarks(section.negativeMarks()).build();
             List<QuestionEntity> questionEntities = generatedQuestions.stream().map(gq -> QuestionEntity.builder().section(sectionEntity).questionText(gq.questionText()).questionType(gq.questionType()).options(gq.options()).correctAnswer(gq.correctAnswer()).explanation(gq.explanation()).difficulty(gq.difficulty()).marks(gq.marks()).topic(gq.topic()).sourceCitationsJson(writeCitations(gq.sourceCitations())).moderationStatus(ModerationStatus.PENDING_REVIEW).includedInPaper(false).build()).toList();
@@ -49,7 +49,7 @@ public class ExamPaperService {
 
     private void validateBlueprint(ExamPaperBlueprintRequest request) {
         if (request.sections().stream().mapToInt(SectionBlueprint::questionCount).sum() > 100) throw new IllegalArgumentException("A single paper may request at most 100 questions.");
-        if (request.knowledgeSource() != null && "NCERT".equalsIgnoreCase(request.knowledgeSource()) && (request.examId() == null || request.examId().isBlank())) throw new IllegalArgumentException("NCERT generation requires a selected exam profile so the authoritative retrieval policy is explicit.");
+        if ((request.knowledgeSources() == null || request.knowledgeSources().isEmpty()) && (request.knowledgeSource() == null || request.knowledgeSource().isBlank())) throw new IllegalArgumentException("Select at least one knowledge source before generating the paper.");
         if (request.examId() == null || request.examId().isBlank()) return;
         ExamProfileEntity profile = profileService.get(request.examId());
         if (profile.getSubject() != null && !profile.getSubject().isBlank() && !profile.getSubject().equalsIgnoreCase(request.subject())) throw new IllegalArgumentException("Selected exam profile is configured for subject " + profile.getSubject() + ".");

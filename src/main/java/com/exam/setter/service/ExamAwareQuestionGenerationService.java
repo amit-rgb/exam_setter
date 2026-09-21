@@ -22,6 +22,11 @@ import java.util.stream.Collectors;
 
 @Service
 public class ExamAwareQuestionGenerationService {
+    private static final String SYLLABUS = "SYLLABUS";
+    private static final String TEACHER_NOTES = "TEACHER_NOTES";
+    private static final String PYQ = "PREVIOUS_YEAR_QUESTION_PAPER";
+    private static final String OTHER = "OTHER";
+
     private final ChatClient chatClient;
     private final VectorStore vectorStore;
     private final UploadedSourceRetrievalService uploadedRetrieval;
@@ -47,113 +52,125 @@ public class ExamAwareQuestionGenerationService {
     }
 
     public List<GeneratedQuestion> generate(QuestionGenerationRequest request) {
-        ExamProfileEntity profile = profileService.get(request.examId());
-        String source = firstNonBlank(request.knowledgeSource(), profile.getKnowledgeSource(), "NCERT");
-        String corpusVersion = firstNonBlank(request.corpusVersion(), profile.getCorpusVersion(), null);
-        String bookCode = firstNonBlank(request.bookCode(), profile.getNcertBookCode(), null);
-        Integer chapterNumber = request.chapterNumber() != null ? request.chapterNumber() : profile.getNcertChapterNumber();
+        ExamProfileEntity profile = request.examId() == null || request.examId().isBlank()
+                ? null : profileService.get(request.examId());
 
-        List<Document> knowledge = retrieveKnowledge(request, source, corpusVersion, bookCode, chapterNumber);
-        if (knowledge.isEmpty()) throw new IllegalArgumentException("No usable knowledge context is available for the selected subject, target levels and source policy.");
+        List<String> sources = resolveSources(request, profile);
+        if (sources.isEmpty()) {
+            throw new IllegalArgumentException("Select at least one knowledge source before generating the paper.");
+        }
 
-        List<Document> questionBankEvidence = retrieveQuestionBankEvidence(request);
-        List<Document> syllabusEvidence = retrieveSyllabusEvidence(request);
-        List<Document> pyqs = retrievePyqs(request);
+        String corpusVersion = firstNonBlank(request.corpusVersion(), profile == null ? null : profile.getCorpusVersion(), null);
+        String bookCode = firstNonBlank(request.bookCode(), profile == null ? null : profile.getNcertBookCode(), null);
+        Integer chapterNumber = request.chapterNumber() != null ? request.chapterNumber() : profile == null ? null : profile.getNcertChapterNumber();
+        String query = buildQuery(request);
 
-        String knowledgeText = join(questionBankEvidence.isEmpty() ? knowledge : knowledge, "\n\n---\n\n");
-        String questionBankText = join(questionBankEvidence, "\n--- QUESTION BANK ---\n");
-        String syllabusText = join(syllabusEvidence, "\n--- SYLLABUS ---\n");
-        String pyqText = join(pyqs, "\n--- PYQ ---\n");
+        List<Document> teacherNotes = sources.contains(TEACHER_NOTES)
+                ? uploadedRetrieval.retrieveKnowledge(request.subject(), request.targetLevels(), query, List.of("STUDY_NOTES"), Math.max(8, request.count() * 4))
+                : List.of();
+        List<Document> other = sources.contains(OTHER)
+                ? uploadedRetrieval.retrieveKnowledge(request.subject(), request.targetLevels(), query, List.of("REFERENCE"), Math.max(8, request.count() * 4))
+                : List.of();
+        List<Document> syllabus = sources.contains(SYLLABUS)
+                ? uploadedRetrieval.retrieveSyllabusScope(request.subject(), request.targetLevels(), query, Math.max(4, request.count() * 2))
+                : List.of();
+        List<Document> pyqs = sources.contains(PYQ) ? retrievePyqs(request) : List.of();
+        List<Document> ncert = sources.contains("NCERT")
+                ? ncertRetrieval.retrieve(request.subject(), request.targetLevels(), query, corpusVersion, bookCode, chapterNumber, Math.max(12, request.count() * 5))
+                : List.of();
 
-        List<String> citations = knowledge.stream().map(this::citation).distinct().limit(12).toList();
-        List<String> evidenceCitations = new ArrayList<>();
-        questionBankEvidence.stream().map(this::citation).distinct().limit(6).forEach(evidenceCitations::add);
-        syllabusEvidence.stream().map(this::citation).distinct().limit(4).forEach(evidenceCitations::add);
+        List<Document> generationContext = new ArrayList<>();
+        generationContext.addAll(teacherNotes);
+        generationContext.addAll(other);
+        generationContext.addAll(syllabus);
+        generationContext.addAll(pyqs);
+        generationContext.addAll(ncert);
 
-        Map<String, Object> constraints = profileService.toGenerationConstraints(profile);
+        if (generationContext.isEmpty()) {
+            throw new IllegalArgumentException("No indexed material was found for the selected knowledge source(s), subject and target level. Ingest the selected source type first.");
+        }
+
+        String teacherText = join(teacherNotes, "\n--- TEACHER NOTE ---\n");
+        String otherText = join(other, "\n--- OTHER REFERENCE ---\n");
+        String syllabusText = join(syllabus, "\n--- SYLLABUS ---\n");
+        String pyqText = join(pyqs, "\n--- PREVIOUS YEAR QUESTION ---\n");
+        String ncertText = join(ncert, "\n--- NCERT ---\n");
+
+        List<String> citations = generationContext.stream().map(this::citation).distinct().limit(16).toList();
+        Map<String, Object> constraints = profile == null ? Map.of() : profileService.toGenerationConstraints(profile);
+
         List<GeneratedQuestion> accepted = new ArrayList<>();
         Set<String> normalizedAccepted = new HashSet<>();
 
         for (int attempt = 0; attempt < 4 && accepted.size() < request.count(); attempt++) {
             int remaining = request.count() - accepted.size();
             String response = chatClient.prompt().user(
-                    buildPrompt(request, constraints, pyqText, knowledgeText, questionBankText, syllabusText,
-                            remaining, source, citations, evidenceCitations)
+                    buildPrompt(request, constraints, sources, pyqText, teacherText, otherText, syllabusText, ncertText, remaining, citations)
             ).call().content();
 
             for (GeneratedQuestion q : parse(response)) {
                 if (accepted.size() >= request.count() || q.questionText() == null || q.questionText().isBlank()) break;
                 String normalized = normalizeQuestion(q.questionText());
                 if (!normalizedAccepted.add(normalized)) continue;
-                if (similarityGuard.isTooSimilarToPyq(q.questionText(), request.examId())) continue;
+                if (sources.contains(PYQ) && similarityGuard.isTooSimilarToPyq(q.questionText(), request.examId())) continue;
                 if (accepted.stream().anyMatch(existing -> lexicalSimilarity(existing.questionText(), q.questionText()) >= 0.86)) continue;
-                accepted.add(withCitations(q, mergeCitations(citations, evidenceCitations)));
+                accepted.add(withCitations(q, citations));
             }
         }
 
-        if (accepted.size() < request.count()) throw new IllegalStateException("Exam-aware validation rejected too many generated questions; regenerate the section.");
+        if (accepted.size() < request.count()) {
+            throw new IllegalStateException("Source-grounded validation rejected too many generated questions; broaden the selected source material or regenerate the section.");
+        }
         return accepted;
     }
 
-    private List<Document> retrieveKnowledge(QuestionGenerationRequest request, String source,
-                                              String corpusVersion, String bookCode, Integer chapterNumber) {
-        String normalized = source.trim().toUpperCase();
-        String query = request.subject() + " "
-                + firstNonBlank(request.topic(), "fundamental concepts", null) + " "
+    private List<String> resolveSources(QuestionGenerationRequest request, ExamProfileEntity profile) {
+        List<String> selected = request.knowledgeSources() == null ? List.of() : request.knowledgeSources().stream()
+                .filter(v -> v != null && !v.isBlank()).map(this::normalizeSource).distinct().toList();
+        if (!selected.isEmpty()) return selected;
+
+        String legacy = firstNonBlank(request.knowledgeSource(), profile == null ? null : profile.getKnowledgeSource(), null);
+        if (legacy == null) return List.of();
+        if ("MIXED".equalsIgnoreCase(legacy)) return List.of("NCERT", TEACHER_NOTES, OTHER);
+        if ("USER_UPLOAD".equalsIgnoreCase(legacy)) return List.of(TEACHER_NOTES, OTHER);
+        return List.of(normalizeSource(legacy));
+    }
+
+    private String normalizeSource(String value) {
+        String v = value.trim().toUpperCase().replace('-', '_').replace(' ', '_');
+        return switch (v) {
+            case "STUDY_NOTES", "TEACHER_NOTE", "TEACHER_NOTES" -> TEACHER_NOTES;
+            case "PREVIOUS_YEAR_PAPER", "PREVIOUS_YEAR_QUESTION_PAPER", "PYQ" -> PYQ;
+            case "SYLLABUS" -> SYLLABUS;
+            case "REFERENCE", "OTHER" -> OTHER;
+            default -> v;
+        };
+    }
+
+    private String buildQuery(QuestionGenerationRequest request) {
+        return request.subject() + " " + firstNonBlank(request.topic(), "fundamental concepts", null) + " "
                 + request.questionType().name() + " principles laws formulas examples";
-
-        if ("NCERT".equals(normalized)) {
-            return ncertRetrieval.retrieve(request.subject(), request.targetLevels(), query,
-                    corpusVersion, bookCode, chapterNumber, Math.max(12, request.count() * 5));
-        }
-
-        List<Document> uploaded = uploadedRetrieval.retrieveKnowledge(
-                request.subject(), request.targetLevels(), query, Math.max(8, request.count() * 4));
-
-        if ("MIXED".equals(normalized)) {
-            List<Document> ncert = ncertRetrieval.retrieve(request.subject(), request.targetLevels(), query,
-                    corpusVersion, bookCode, chapterNumber, Math.max(8, request.count() * 3));
-            List<Document> combined = new ArrayList<>(ncert);
-            combined.addAll(uploaded.stream().limit(Math.max(6, request.count() * 2)).toList());
-            return combined;
-        }
-
-        return uploaded;
-    }
-
-    private List<Document> retrieveQuestionBankEvidence(QuestionGenerationRequest request) {
-        String query = request.subject() + " " + request.questionType().name() + " question format practice";
-        return uploadedRetrieval.retrieveQuestionBankEvidence(
-                request.subject(), request.targetLevels(), query, Math.min(8, Math.max(2, request.count())));
-    }
-
-    private List<Document> retrieveSyllabusEvidence(QuestionGenerationRequest request) {
-        String query = request.subject() + " " + firstNonBlank(request.topic(), "syllabus scope", null);
-        return uploadedRetrieval.retrieveSyllabusScope(
-                request.subject(), request.targetLevels(), query, Math.min(4, Math.max(1, request.count() / 2)));
     }
 
     private List<Document> retrievePyqs(QuestionGenerationRequest request) {
-        String examId = request.examId() == null ? "" : request.examId().trim().toUpperCase();
-        if (examId.isBlank()) return List.of();
-        String filter = "sourceType == 'PREVIOUS_YEAR_PAPER' && examId == '" + escape(examId) + "'";
+        String subject = request.subject() == null ? "" : request.subject().trim().toLowerCase();
+        String filter = "sourceType == 'PREVIOUS_YEAR_QUESTION_PAPER' && subject == '" + escape(subject) + "'";
         return vectorStore.similaritySearch(SearchRequest.builder()
-                .query(request.subject() + " " + request.questionType().name() + " examination")
-                .topK(Math.min(10, Math.max(3, request.count())))
+                .query(buildQuery(request))
+                .topK(Math.min(12, Math.max(4, request.count() * 2)))
                 .similarityThreshold(0.20)
                 .filterExpression(filter)
                 .build());
     }
 
     private String buildPrompt(QuestionGenerationRequest request, Map<String, Object> constraints,
-                               String pyqText, String knowledgeText, String questionBankText,
-                               String syllabusText, int count, String source,
-                               List<String> citations, List<String> evidenceCitations) {
+                               List<String> sources, String pyqText, String teacherText, String otherText,
+                               String syllabusText, String ncertText, int count, List<String> citations) {
         return """
                 You are an expert examination question setter.
                 Generate exactly %d NEW questions.
-                The exam profile and retrieval policy are authoritative.
-                Knowledge source policy: %s
+
+                SELECTED KNOWLEDGE SOURCES: %s
                 Exam profile constraints: %s
                 Subject: %s
                 Target levels: %s
@@ -162,50 +179,51 @@ public class ExamAwareQuestionGenerationService {
                 Requested difficulty: %s
                 Marks: %d
 
-                PYQs are PATTERN EVIDENCE ONLY. Never copy, paraphrase, or reproduce them.
+                SOURCE RULES:
+                - TEACHER_NOTES and OTHER are factual knowledge sources.
+                - SYLLABUS defines the permitted curriculum scope. Do not invent content outside it.
+                - PREVIOUS_YEAR_QUESTION_PAPER is pattern and concept evidence only. Never copy, paraphrase,
+                  reproduce, or lightly modify an existing question or answer.
+                - NCERT, when supplied by a backward-compatible API client, is authoritative textbook content.
+
+                SYLLABUS:
                 %s
 
-                SYLLABUS / SCOPE EVIDENCE (not factual authority):
+                TEACHER NOTES:
                 %s
 
-                QUESTION-BANK / PRACTICE EVIDENCE (not factual authority):
+                OTHER:
                 %s
 
-                AUTHORITATIVE KNOWLEDGE CONTEXT:
+                PREVIOUS YEAR QUESTIONS:
                 %s
+
+                NCERT:
+                %s
+
+                Generate only questions that can be grounded in the selected source material.
+                When multiple sources are selected, combine them: use syllabus for scope, teacher/other
+                material for factual grounding, and PYQs for examination pattern and coverage.
+                If a selected source has no material, do not silently replace it with an unselected source.
+                For MCQ use exactly four options and exactly one correct answer.
+                Return raw JSON only.
 
                 RETRIEVAL SOURCES:
                 %s
-
-                ADDITIONAL EVIDENCE SOURCES:
-                %s
-
-                Generate questions only from the authoritative knowledge context.
-                Use syllabus evidence only to respect scope. Use question-bank and PYQ material
-                only to understand coverage/style; never reuse their wording or answer content.
-                For MCQ use exactly four options and exactly one correct answer.
-                Return raw JSON only.
                 """.formatted(
-                count, source, constraints, request.subject(), request.targetLevels(),
+                count, sources, constraints, request.subject(), request.targetLevels(),
                 request.topic() == null ? "" : request.topic(), request.questionType().name(),
                 request.difficulty(), request.marks(),
-                pyqText.isBlank() ? "No PYQs available." : pyqText,
-                syllabusText.isBlank() ? "No syllabus evidence available." : syllabusText,
-                questionBankText.isBlank() ? "No question-bank evidence available." : questionBankText,
-                knowledgeText,
-                citations.isEmpty() ? "None" : String.join("\n", citations),
-                evidenceCitations.isEmpty() ? "None" : String.join("\n", evidenceCitations));
+                syllabusText.isBlank() ? "No syllabus material selected or indexed." : syllabusText,
+                teacherText.isBlank() ? "No teacher notes selected or indexed." : teacherText,
+                otherText.isBlank() ? "No other reference material selected or indexed." : otherText,
+                pyqText.isBlank() ? "No previous-year questions selected or indexed." : pyqText,
+                ncertText.isBlank() ? "No NCERT material selected." : ncertText,
+                citations.isEmpty() ? "None" : String.join("\n", citations));
     }
 
     private String join(List<Document> documents, String delimiter) {
-        return documents.stream().map(Document::getText).filter(text -> text != null && !text.isBlank())
-                .collect(Collectors.joining(delimiter));
-    }
-
-    private List<String> mergeCitations(List<String> primary, List<String> secondary) {
-        List<String> merged = new ArrayList<>(primary);
-        secondary.forEach(value -> { if (!merged.contains(value)) merged.add(value); });
-        return merged.stream().limit(16).toList();
+        return documents.stream().map(Document::getText).filter(text -> text != null && !text.isBlank()).collect(Collectors.joining(delimiter));
     }
 
     private String citation(Document document) {
@@ -213,10 +231,41 @@ public class ExamAwareQuestionGenerationService {
         return "NCERT".equalsIgnoreCase(source) ? ncertRetrieval.citation(document) : uploadedRetrieval.citation(document);
     }
 
-    private List<GeneratedQuestion> parse(String response) { if (response == null || response.isBlank()) return List.of(); String json = response.replace("```json", "").replace("```", "").trim(); try { if (json.startsWith("{")) { ExamPaperResponse wrapper = mapper.readValue(json, ExamPaperResponse.class); return wrapper.questions() == null ? List.of() : wrapper.questions(); } return mapper.readValue(json, new TypeReference<List<GeneratedQuestion>>() {}); } catch (Exception e) { throw new IllegalStateException("Unable to parse exam-aware question response: " + e.getMessage(), e); } }
-    private GeneratedQuestion withCitations(GeneratedQuestion q, List<String> citations) { return new GeneratedQuestion(q.questionText(), q.questionType(), q.options(), q.correctAnswer(), q.explanation(), q.difficulty(), q.marks(), q.topic(), citations); }
-    private double lexicalSimilarity(String a, String b) { Set<String> left = java.util.Arrays.stream(normalizeQuestion(a).split(" ")).filter(s -> !s.isBlank()).collect(Collectors.toSet()); Set<String> right = java.util.Arrays.stream(normalizeQuestion(b).split(" ")).filter(s -> !s.isBlank()).collect(Collectors.toSet()); if (left.isEmpty() || right.isEmpty()) return 0; long intersection = left.stream().filter(right::contains).count(); return intersection / (double)(left.size()+right.size()-intersection); }
-    private String normalizeQuestion(String value) { return value == null ? "" : value.toLowerCase().replaceAll("[^a-z0-9 ]", " ").replaceAll("\\s+", " ").trim(); }
-    private String firstNonBlank(String first, String second, String fallback) { if (first != null && !first.isBlank()) return first.trim(); if (second != null && !second.isBlank()) return second.trim(); return fallback; }
+    private List<GeneratedQuestion> parse(String response) {
+        if (response == null || response.isBlank()) return List.of();
+        String json = response.replace("\`\`\`json", "").replace("\`\`\`", "").trim();
+        try {
+            if (json.startsWith("{")) {
+                ExamPaperResponse wrapper = mapper.readValue(json, ExamPaperResponse.class);
+                return wrapper.questions() == null ? List.of() : wrapper.questions();
+            }
+            return mapper.readValue(json, new TypeReference<List<GeneratedQuestion>>() {});
+        } catch (Exception e) {
+            throw new IllegalStateException("Unable to parse exam-aware question response: " + e.getMessage(), e);
+        }
+    }
+
+    private GeneratedQuestion withCitations(GeneratedQuestion q, List<String> citations) {
+        return new GeneratedQuestion(q.questionText(), q.questionType(), q.options(), q.correctAnswer(), q.explanation(), q.difficulty(), q.marks(), q.topic(), citations);
+    }
+
+    private double lexicalSimilarity(String a, String b) {
+        Set<String> left = java.util.Arrays.stream(normalizeQuestion(a).split(" ")).filter(s -> !s.isBlank()).collect(Collectors.toSet());
+        Set<String> right = java.util.Arrays.stream(normalizeQuestion(b).split(" ")).filter(s -> !s.isBlank()).collect(Collectors.toSet());
+        if (left.isEmpty() || right.isEmpty()) return 0;
+        long intersection = left.stream().filter(right::contains).count();
+        return intersection / (double) (left.size() + right.size() - intersection);
+    }
+
+    private String normalizeQuestion(String value) {
+        return value == null ? "" : value.toLowerCase().replaceAll("[^a-z0-9 ]", " ").replaceAll("\\s+", " ").trim();
+    }
+
+    private String firstNonBlank(String first, String second, String fallback) {
+        if (first != null && !first.isBlank()) return first.trim();
+        if (second != null && !second.isBlank()) return second.trim();
+        return fallback;
+    }
+
     private String escape(String value) { return value == null ? "" : value.replace("'", "\\'"); }
 }

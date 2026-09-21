@@ -3,6 +3,7 @@ package com.exam.setter.controller;
 import com.exam.setter.dto.GeneratedQuestion;
 import com.exam.setter.dto.QuestionGenerationRequest;
 import com.exam.setter.service.QuestionGeneratorService;
+import com.exam.setter.service.ExamAwareQuestionGenerationService;
 import org.springframework.http.ResponseEntity;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
@@ -24,7 +25,9 @@ public class QuestionController {
     @PostMapping("/generate")
     public ResponseEntity<List<GeneratedQuestion>> generateQuestions(
             @Valid @RequestBody QuestionGenerationRequest request) {
-        List<GeneratedQuestion> questions = questionGeneratorService.generateQuestions(request);
+        List<GeneratedQuestion> questions = request.knowledgeSources() != null && !request.knowledgeSources().isEmpty()
+                ? examAwareQuestionGenerationService.generate(request)
+                : questionGeneratorService.generateQuestions(request);
         return ResponseEntity.ok(questions);
     }
 }

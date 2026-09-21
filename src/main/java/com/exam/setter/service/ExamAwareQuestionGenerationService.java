@@ -154,7 +154,7 @@ public class ExamAwareQuestionGenerationService {
 
     private List<Document> retrievePyqs(QuestionGenerationRequest request) {
         String subject = request.subject() == null ? "" : request.subject().trim().toLowerCase();
-        String filter = "sourceType == 'PREVIOUS_YEAR_QUESTION_PAPER' && subject == '" + escape(subject) + "'";
+        String filter = "sourceType == 'PREVIOUS_YEAR_PAPER' && subject == '" + escape(subject) + "'";
         return vectorStore.similaritySearch(SearchRequest.builder()
                 .query(buildQuery(request))
                 .topK(Math.min(12, Math.max(4, request.count() * 2)))

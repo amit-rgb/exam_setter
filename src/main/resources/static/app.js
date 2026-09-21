@@ -35,7 +35,7 @@ function initIngestPage(){
  type.addEventListener('change',refresh); refresh();
  document.getElementById('ingestForm').addEventListener('submit',async function(e){
    e.preventDefault();
-   const file=document.getElementById('ingestFile').files[0], button=document.getElementById('ingestBtn');
+   const isPyq=type.value==='PREVIOUS_YEAR_QUESTION_PAPER'; const file=document.getElementById(isPyq?'ingestFilePyq':'ingestFile').files[0], button=document.getElementById('ingestBtn');
    const selected=[...levelsEl.selectedOptions].map(o=>o.value).filter(Boolean);
    if(!subject.value){alertBox('Select a subject.',true);return}
    if(!selected.length){alertBox('Select at least one target level.',true);return}
@@ -43,7 +43,7 @@ function initIngestPage(){
    button.disabled=true; button.textContent='Indexing…';
    try{
      let response;
-     if(type.value==='PREVIOUS_YEAR_QUESTION_PAPER'){
+     if(isPyq){
        const examId=document.getElementById('pyqExamId').value.trim();
        const year=Number(document.getElementById('pyqYear').value);
        if(!examId){alertBox('Exam ID is required for a previous-year paper.',true);return}

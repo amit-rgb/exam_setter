@@ -21,8 +21,9 @@ public class QuestionSimilarityGuardService {
     }
 
     public boolean isTooSimilarToPyq(String questionText, String examId) {
-        if (examId == null || examId.isBlank()) return false;
-        String filter = "sourceType == 'PREVIOUS_YEAR_PAPER' && examId == '" + escape(examId) + "'";
+        String filter = examId == null || examId.isBlank()
+                ? "sourceType == 'PREVIOUS_YEAR_PAPER'"
+                : "sourceType == 'PREVIOUS_YEAR_PAPER' && examId == '" + escape(examId) + "'";
         return !search(questionText, filter, 0.94).isEmpty();
     }
 

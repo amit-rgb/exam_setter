@@ -14,9 +14,11 @@ import java.util.List;
 public class QuestionController {
 
     private final QuestionGeneratorService questionGeneratorService;
+    private final ExamAwareQuestionGenerationService examAwareQuestionGenerationService;
 
-    public QuestionController(QuestionGeneratorService questionGeneratorService) {
+    public QuestionController(QuestionGeneratorService questionGeneratorService, ExamAwareQuestionGenerationService examAwareQuestionGenerationService) {
         this.questionGeneratorService = questionGeneratorService;
+        this.examAwareQuestionGenerationService = examAwareQuestionGenerationService;
     }
 
     @PostMapping("/generate")

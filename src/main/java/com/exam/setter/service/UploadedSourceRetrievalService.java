@@ -21,7 +21,17 @@ public class UploadedSourceRetrievalService {
     }
 
     public List<Document> retrieveKnowledge(String subject, List<String> targetLevels, String query, int topK) {
-        return search(subject, targetLevels, query, KNOWLEDGE_TYPES, topK, 0.30);
+        return retrieveKnowledge(subject, targetLevels, query, KNOWLEDGE_TYPES, topK, 0.30);
+    }
+
+    public List<Document> retrieveKnowledge(String subject, List<String> targetLevels, String query,
+                                            List<String> sourceTypes, int topK) {
+        return retrieveKnowledge(subject, targetLevels, query, sourceTypes, topK, 0.20);
+    }
+
+    private List<Document> retrieveKnowledge(String subject, List<String> targetLevels, String query,
+                                             List<String> sourceTypes, int topK, double threshold) {
+        return search(subject, targetLevels, query, sourceTypes, topK, threshold);
     }
 
     public List<Document> retrieveQuestionBankEvidence(String subject, List<String> targetLevels, String query, int topK) {

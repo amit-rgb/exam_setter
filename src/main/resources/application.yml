@@ -50,6 +50,13 @@ spring:
         distance-type: COSINE_DISTANCE
         initialize-schema: true
 
+logging:
+  file:
+    name: ${LOG_FILE:./logs/exam-paper-generator.log}
+  level:
+    root: ${LOG_LEVEL:INFO}
+    com.exam.setter: ${APP_LOG_LEVEL:DEBUG}
+
 server:
   port: ${SERVER_PORT:8080}
   forward-headers-strategy: framework

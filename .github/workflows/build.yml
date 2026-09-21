@@ -3,11 +3,19 @@ name: Build and Test
 on:
   push:
     branches:
+      - main
       - questions_reviews
       - ui/redesign-professional
+      - feature/exam-aware-rag-foundation
+      - feature/ncert-production-corpus
+      - feature/ncert-complete
   pull_request:
     branches:
+      - main
       - questions_reviews
+      - feature/exam-aware-rag-foundation
+      - feature/ncert-production-corpus
+      - feature/ncert-complete
 
 jobs:
   build:

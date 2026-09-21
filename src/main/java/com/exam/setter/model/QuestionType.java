@@ -4,5 +4,9 @@ public enum QuestionType {
     MCQ,
     ASSERTION_REASON,
     NUMERICAL,
-    SHORT_ANSWER
+    SHORT_ANSWER,
+    MATCHING,
+    STATEMENT_BASED,
+    CASE_BASED,
+    MIXED
 }

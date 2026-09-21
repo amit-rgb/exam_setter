@@ -278,7 +278,7 @@ public class ExamAwareQuestionGenerationService {
                 When multiple sources are selected, combine them: use syllabus for scope, teacher/other
                 material for factual grounding, and PYQs for examination pattern and coverage.
                 If a selected factual source has no material, do not silently replace it with an unselected source.
-                For MCQ use exactly four options and exactly one correct answer.
+                Apply the format rules above to each generated question.
                 Return raw JSON only.
 
                 RETRIEVAL SOURCES:
@@ -297,8 +297,12 @@ public class ExamAwareQuestionGenerationService {
                 teacherText.isBlank() ? "No teacher notes selected or indexed." : teacherText,
                 otherText.isBlank() ? "No other reference material selected or indexed." : otherText,
                 pyqText.isBlank() ? "No previous-year questions selected or indexed." : pyqText,
-                ncertText.isBlank() ? "No NCERT material selected." : ncertText,
                 pyqPattern,
+                syllabusText.isBlank() ? "No syllabus material selected or indexed." : syllabusText,
+                teacherText.isBlank() ? "No teacher notes selected or indexed." : teacherText,
+                otherText.isBlank() ? "No other reference material selected or indexed." : otherText,
+                pyqText.isBlank() ? "No previous-year questions selected or indexed." : pyqText,
+                ncertText.isBlank() ? "No NCERT material selected." : ncertText,
                 citations.isEmpty() ? "None" : String.join("\n", citations),
                 attempt,
                 previouslyAccepted == null || previouslyAccepted.isEmpty() ? "None" : String.join("\n", previouslyAccepted));

@@ -46,6 +46,11 @@ public class PyqIngestionService {
      * text is persisted separately and the PDF itself remains the source record.
      */
     public List<PyqQuestionEntity> ingestPdf(MultipartFile file, String examId, int year,
+                                             String paperName, String subject) throws IOException {
+        return ingestPdf(file, examId, year, paperName, subject, null);
+    }
+
+    public List<PyqQuestionEntity> ingestPdf(MultipartFile file, String examId, int year,
                                              String paperName, String subject, String targetLevel) throws IOException {
         if (file == null || file.isEmpty()) throw new IllegalArgumentException("A PYQ PDF is required.");
         if (year < 1900 || year > 2100) throw new IllegalArgumentException("PYQ year is invalid.");

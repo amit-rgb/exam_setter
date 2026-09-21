@@ -20,6 +20,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.LinkedHashMap;
 import java.util.stream.Collectors;
 
 @Service
@@ -106,6 +107,7 @@ public class ExamAwareQuestionGenerationService {
         String syllabusText = join(syllabus, "\n--- SYLLABUS ---\n");
         String pyqText = join(pyqs, "\n--- PREVIOUS YEAR QUESTION ---\n");
         String ncertText = join(ncert, "\n--- NCERT ---\n");
+        String pyqPattern = buildPyqPattern(pyqs, request.questionType());
 
         List<String> citations = generationContext.stream().map(this::citation).distinct().limit(16).toList();
         Map<String, Object> constraints = profile == null ? Map.of() : profileService.toGenerationConstraints(profile);
@@ -117,7 +119,7 @@ public class ExamAwareQuestionGenerationService {
             int remaining = request.count() - accepted.size();
             int requestedThisAttempt = Math.max(remaining, Math.min(remaining * 2, request.count() + 4));
             String response = chatClient.prompt().user(
-                    buildPrompt(request, constraints, sources, pyqText, teacherText, otherText, syllabusText, ncertText,
+                    buildPrompt(request, constraints, sources, pyqText, teacherText, otherText, syllabusText, ncertText, pyqPattern,
                             requestedThisAttempt, citations, attempt + 1,
                             accepted.stream().map(GeneratedQuestion::questionText).toList())
             ).call().content();
@@ -203,7 +205,7 @@ public class ExamAwareQuestionGenerationService {
 
     private String buildPrompt(QuestionGenerationRequest request, Map<String, Object> constraints,
                                List<String> sources, String pyqText, String teacherText, String otherText,
-                               String syllabusText, String ncertText, int count, List<String> citations,
+                               String syllabusText, String ncertText, String pyqPattern, int count, List<String> citations,
                                int attempt, List<String> previouslyAccepted) {
         return """
                 You are an expert examination question setter.
@@ -218,6 +220,9 @@ public class ExamAwareQuestionGenerationService {
                 Requested difficulty: %s
                 Marks: %d
 
+                PREVIOUS-YEAR PAPER PATTERN:
+                %s
+
                 SOURCE RULES:
                 - TEACHER_NOTES and OTHER are factual knowledge sources.
                 - SYLLABUS defines the permitted curriculum scope.
@@ -230,13 +235,27 @@ public class ExamAwareQuestionGenerationService {
                   reproduce, or lightly modify an existing question or answer.
                 - NCERT, when supplied by a backward-compatible API client, is authoritative textbook content.
                 - Every question in this attempt must be materially different from the previously accepted questions.
+                - The previous-year pattern is a distribution guide, not a source for copying wording.
+                - If questionType is MIXED, vary formats according to the observed PYQ distribution when available.
+                  Do not collapse the paper into MCQs. Include visual questions when the PYQ pattern contains them,
+                  but visual questions must remain a minority unless the observed pattern supports a higher share.
+                - Visual questions must contain a useful visual specification: visualRequired=true and visualType
+                  (GRAPH, DIAGRAM, IMAGE, MAP, TABLE, CIRCUIT, FLOWCHART). Use visualDescription to describe exactly
+                  what the student should see. Non-visual questions must use visualRequired=false and visualType=NONE.
                 - For SYLLABUS-only generation, the syllabus is the boundary of the curriculum, not the
                   answer bank. Questions may use standard subject knowledge to answer concepts explicitly
                   listed in the syllabus.
                 - The JSON property names MUST be exactly:
-                  questionText, questionType, options, correctAnswer, explanation, difficulty, marks, topic.
-                - For this MCQ request, questionType MUST be "MCQ", options MUST contain exactly 4 strings,
-                  and correctAnswer MUST be one of A, B, C, D.
+                  questionText, questionType, options, correctAnswer, explanation, difficulty, marks, topic,
+                  visualRequired, visualType, visualDescription.
+                - For MCQ questions, options MUST contain exactly 4 strings and correctAnswer MUST be one of A, B, C, D.
+                - For ASSERTION_REASON, options should contain the standard assertion/reason alternatives when appropriate.
+                - For MATCHING, options should contain the matching pairs/sets in readable text.
+                - For NUMERICAL and SHORT_ANSWER, options may be an empty array.
+                - For CASE_BASED and STATEMENT_BASED, preserve the case/statements in questionText and use options
+                  when the format requires selectable responses.
+                - For MIXED, choose the format per the previous-year pattern; do not emit questionType=MIXED
+                  for an individual question.
 
                 SYLLABUS:
                 %s
@@ -279,6 +298,7 @@ public class ExamAwareQuestionGenerationService {
                 otherText.isBlank() ? "No other reference material selected or indexed." : otherText,
                 pyqText.isBlank() ? "No previous-year questions selected or indexed." : pyqText,
                 ncertText.isBlank() ? "No NCERT material selected." : ncertText,
+                pyqPattern,
                 citations.isEmpty() ? "None" : String.join("\n", citations),
                 attempt,
                 previouslyAccepted == null || previouslyAccepted.isEmpty() ? "None" : String.join("\n", previouslyAccepted));
@@ -308,7 +328,44 @@ public class ExamAwareQuestionGenerationService {
     }
 
     private GeneratedQuestion withCitations(GeneratedQuestion q, List<String> citations) {
-        return new GeneratedQuestion(q.questionText(), q.questionType(), q.options(), q.correctAnswer(), q.explanation(), q.difficulty(), q.marks(), q.topic(), citations);
+        return new GeneratedQuestion(q.questionText(), q.questionType(), q.options(), q.correctAnswer(),
+                q.explanation(), q.difficulty(), q.marks(), q.topic(), citations,
+                q.visualRequired(), q.visualType(), q.visualDescription());
+    }
+
+    private String buildPyqPattern(List<Document> pyqs, com.exam.setter.model.QuestionType requestedType) {
+        if (pyqs == null || pyqs.isEmpty()) {
+            return requestedType == com.exam.setter.model.QuestionType.MIXED
+                    ? "No PYQ pattern was retrieved. Use a balanced mix of MCQ, ASSERTION_REASON, NUMERICAL, SHORT_ANSWER and, where academically appropriate, CASE_BASED/STATEMENT_BASED questions. Include at most one visual question for every 5 questions unless the subject naturally requires more."
+                    : "No PYQ pattern was retrieved. Follow the requested section type.";
+        }
+
+        Map<String, Integer> typeCounts = new LinkedHashMap<>();
+        Map<String, Integer> visualCounts = new LinkedHashMap<>();
+        int visualTotal = 0;
+        for (Document d : pyqs) {
+            String type = String.valueOf(d.getMetadata().getOrDefault("questionType", "OTHER")).trim().toUpperCase();
+            if (type.isBlank() || "NULL".equals(type)) type = "OTHER";
+            typeCounts.merge(type, 1, Integer::sum);
+            boolean visual = Boolean.parseBoolean(String.valueOf(d.getMetadata().getOrDefault("visualRequired", "false")));
+            if (visual) {
+                visualTotal++;
+                String visualType = String.valueOf(d.getMetadata().getOrDefault("visualType", "OTHER")).trim().toUpperCase();
+                visualCounts.merge(visualType.isBlank() ? "OTHER" : visualType, 1, Integer::sum);
+            }
+        }
+
+        String typeSummary = typeCounts.entrySet().stream()
+                .map(e -> e.getKey() + "=" + e.getValue())
+                .collect(Collectors.joining(", "));
+        String visualSummary = visualCounts.isEmpty()
+                ? "none detected"
+                : visualCounts.entrySet().stream().map(e -> e.getKey() + "=" + e.getValue()).collect(Collectors.joining(", "));
+        return "Observed PYQ questions=" + pyqs.size()
+                + "; question types: " + typeSummary
+                + "; visual questions=" + visualTotal
+                + "; visual formats: " + visualSummary
+                + ". Match the relative variety and coverage where possible. Never copy PYQ wording.";
     }
 
     private double lexicalSimilarity(String a, String b) {

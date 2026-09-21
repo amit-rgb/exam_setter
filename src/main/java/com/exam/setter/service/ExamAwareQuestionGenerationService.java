@@ -233,7 +233,7 @@ public class ExamAwareQuestionGenerationService {
 
     private List<GeneratedQuestion> parse(String response) {
         if (response == null || response.isBlank()) return List.of();
-        String json = response.replace("\`\`\`json", "").replace("\`\`\`", "").trim();
+        String json = response.replace("```json", "").replace("```", "").trim();
         try {
             if (json.startsWith("{")) {
                 ExamPaperResponse wrapper = mapper.readValue(json, ExamPaperResponse.class);

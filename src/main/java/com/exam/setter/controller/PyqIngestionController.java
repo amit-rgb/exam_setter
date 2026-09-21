@@ -25,14 +25,16 @@ public class PyqIngestionController {
             @RequestParam("examId") String examId,
             @RequestParam("year") int year,
             @RequestParam(value = "paperName", required = false) String paperName,
-            @RequestParam(value = "subject", required = false) String subject) throws IOException {
-        List<PyqQuestionEntity> questions = service.ingestPdf(file, examId, year, paperName, subject);
+            @RequestParam(value = "subject", required = false) String subject,
+            @RequestParam(value = "targetLevel", required = false) String targetLevel) throws IOException {
+        List<PyqQuestionEntity> questions = service.ingestPdf(file, examId, year, paperName, subject, targetLevel);
         return ResponseEntity.ok(Map.of(
                 "status", "SUCCESS",
                 "examId", examId.trim().toUpperCase(),
                 "year", year,
                 "sourceFileName", file.getOriginalFilename(),
-                "questionsExtracted", questions.size()
+                "questionsExtracted", questions.size(),
+                "targetLevel", targetLevel == null ? "" : targetLevel
         ));
     }
 }

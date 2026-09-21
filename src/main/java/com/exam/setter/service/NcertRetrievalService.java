@@ -51,12 +51,34 @@ public class NcertRetrievalService {
         }
 
         int candidateCount = Math.min(120, Math.max(topK * 5, 20));
+        String searchQuery = query == null || query.isBlank()
+                ? normalizedSubject + " concepts principles examples"
+                : query;
+
         List<Document> candidates = vectorStore.similaritySearch(SearchRequest.builder()
-                .query(query == null || query.isBlank() ? normalizedSubject + " concepts principles examples" : query)
+                .query(searchQuery)
                 .topK(candidateCount)
-                .similarityThreshold(0.20)
+                .similarityThreshold(0.15)
                 .filterExpression(filter.toString())
                 .build());
+
+        // Older NCERT indexes may have the correct source metadata but slightly
+        // different class/sourceType metadata. Do not make generation fail
+        // merely because a legacy corpus uses a compatible representation.
+        if (candidates.isEmpty()) {
+            candidates = vectorStore.similaritySearch(SearchRequest.builder()
+                    .query(searchQuery)
+                    .topK(Math.min(160, Math.max(candidateCount, 40)))
+                    .similarityThreshold(0.10)
+                    .filterExpression("source == 'NCERT'")
+                    .build())
+                    .stream()
+                    .filter(d -> matchesSubject(d, normalizedSubject))
+                    .filter(d -> matchesCorpusVersion(d, version))
+                    .filter(d -> matchesLevel(d, levels))
+                    .filter(d -> matchesBookAndChapter(d, bookCode, chapterNumber))
+                    .toList();
+        }
 
         return rerank(candidates, levels, bookCode, chapterNumber, topK);
     }
@@ -76,6 +98,33 @@ public class NcertRetrievalService {
                 })
                 .limit(Math.max(1, topK))
                 .toList();
+    }
+
+    private boolean matchesSubject(Document document, String subject) {
+        return subject.equals(normalize(String.valueOf(document.getMetadata().getOrDefault("subject", ""))));
+    }
+
+    private boolean matchesCorpusVersion(Document document, String version) {
+        Object value = document.getMetadata().get("corpusVersion");
+        return value == null || version.equalsIgnoreCase(String.valueOf(value).trim());
+    }
+
+    private boolean matchesLevel(Document document, List<String> levels) {
+        if (levels.isEmpty()) return true;
+        Map<String, Object> m = document.getMetadata();
+        String classLevel = normalize(String.valueOf(m.getOrDefault("classLevel", "")));
+        String targetLevel = normalize(String.valueOf(m.getOrDefault("targetLevel", "")));
+        String targetLevels = String.valueOf(m.getOrDefault("targetLevels", ""));
+        return levels.stream().anyMatch(level ->
+                level.equals(classLevel) || level.equals(targetLevel) ||
+                List.of(targetLevels.split("[,\\s]+")).stream().map(this::normalize).anyMatch(level::equals));
+    }
+
+    private boolean matchesBookAndChapter(Document document, String bookCode, Integer chapterNumber) {
+        Map<String, Object> m = document.getMetadata();
+        if (!blank(bookCode) && !bookCode.trim().equalsIgnoreCase(String.valueOf(m.getOrDefault("bookCode", "")))) return false;
+        if (chapterNumber != null && !Objects.equals(toInteger(m.get("chapterNumber")), chapterNumber)) return false;
+        return true;
     }
 
     private double rerankScore(Document document, List<String> levels, String requestedBook, Integer requestedChapter) {

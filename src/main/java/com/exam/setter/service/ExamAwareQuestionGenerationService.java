@@ -12,6 +12,8 @@ import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.stereotype.Service;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -22,6 +24,7 @@ import java.util.stream.Collectors;
 
 @Service
 public class ExamAwareQuestionGenerationService {
+    private static final Logger log = LoggerFactory.getLogger(ExamAwareQuestionGenerationService.class);
     private static final String SYLLABUS = "SYLLABUS";
     private static final String TEACHER_NOTES = "TEACHER_NOTES";
     private static final String PYQ = "PREVIOUS_YEAR_QUESTION_PAPER";
@@ -34,6 +37,7 @@ public class ExamAwareQuestionGenerationService {
     private final ExamProfileService profileService;
     private final QuestionSimilarityGuardService similarityGuard;
     private final ObjectMapper mapper;
+    private final GenerationDiagnosticService diagnosticService;
 
     public ExamAwareQuestionGenerationService(ChatClient.Builder builder,
                                               VectorStore vectorStore,
@@ -41,7 +45,8 @@ public class ExamAwareQuestionGenerationService {
                                               UploadedSourceRetrievalService uploadedRetrieval,
                                               ExamProfileService profileService,
                                               QuestionSimilarityGuardService similarityGuard,
-                                              ObjectMapper mapper) {
+                                              ObjectMapper mapper,
+                                              GenerationDiagnosticService diagnosticService) {
         this.chatClient = builder.build();
         this.vectorStore = vectorStore;
         this.ncertRetrieval = ncertRetrieval;
@@ -49,6 +54,7 @@ public class ExamAwareQuestionGenerationService {
         this.profileService = profileService;
         this.similarityGuard = similarityGuard;
         this.mapper = mapper.copy().configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+        this.diagnosticService = diagnosticService;
     }
 
     public List<GeneratedQuestion> generate(QuestionGenerationRequest request) {
@@ -56,6 +62,7 @@ public class ExamAwareQuestionGenerationService {
                 ? null : profileService.get(request.examId());
 
         List<String> sources = resolveSources(request, profile);
+        log.info("Question generation started: subject={}, levels={}, sources={}, count={}, type={}, difficulty={}, examId={}", request.subject(), request.targetLevels(), sources, request.count(), request.questionType(), request.difficulty(), request.examId());
         if (sources.isEmpty()) {
             throw new IllegalArgumentException("Select at least one knowledge source before generating the paper.");
         }
@@ -86,8 +93,12 @@ public class ExamAwareQuestionGenerationService {
         generationContext.addAll(pyqs);
         generationContext.addAll(ncert);
 
+        log.info("Retrieval counts: syllabus={}, teacherNotes={}, pyqs={}, other={}, ncert={}", syllabus.size(), teacherNotes.size(), pyqs.size(), other.size(), ncert.size());
         if (generationContext.isEmpty()) {
-            throw new IllegalArgumentException("No indexed material was found for the selected knowledge source(s), subject and target level. Ingest the selected source type first.");
+            IllegalArgumentException error = new IllegalArgumentException("No indexed material was found for the selected knowledge source(s), subject and target level. Ingest the selected source type first.");
+            diagnosticService.recordFailure(Map.of("subject", request.subject(), "targetLevels", request.targetLevels(), "selectedSources", sources, "retrievedSyllabus", syllabus.size(), "retrievedTeacherNotes", teacherNotes.size(), "retrievedPyq", pyqs.size(), "retrievedOther", other.size(), "retrievedNcert", ncert.size()), error);
+            log.error("No generation context found: subject={}, levels={}, sources={}", request.subject(), request.targetLevels(), sources, error);
+            throw error;
         }
 
         String teacherText = join(teacherNotes, "\n--- TEACHER NOTE ---\n");
@@ -121,6 +132,8 @@ public class ExamAwareQuestionGenerationService {
         if (accepted.size() < request.count()) {
             throw new IllegalStateException("Source-grounded validation rejected too many generated questions; broaden the selected source material or regenerate the section.");
         }
+        diagnosticService.recordSuccess(Map.of("subject", request.subject(), "targetLevels", request.targetLevels(), "selectedSources", sources, "retrievedSyllabus", syllabus.size(), "retrievedTeacherNotes", teacherNotes.size(), "retrievedPyq", pyqs.size(), "retrievedOther", other.size(), "retrievedNcert", ncert.size(), "generatedQuestions", accepted.size()));
+        log.info("Question generation completed: generatedQuestions={}, sources={}", accepted.size(), sources);
         return accepted;
     }
 

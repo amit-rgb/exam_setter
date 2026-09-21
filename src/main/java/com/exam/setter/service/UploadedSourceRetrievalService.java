@@ -13,7 +13,6 @@ import java.util.Map;
 public class UploadedSourceRetrievalService {
 
     private static final List<String> KNOWLEDGE_TYPES = List.of("STUDY_NOTES", "REFERENCE", "TEXTBOOK");
-
     private final VectorStore vectorStore;
 
     public UploadedSourceRetrievalService(VectorStore vectorStore) {
@@ -69,24 +68,46 @@ public class UploadedSourceRetrievalService {
         }
         filter.append("]");
 
-        List<String> levels = normalizeLevels(targetLevels);
-        if (!levels.isEmpty()) {
-            filter.append(" && (");
-            for (int i = 0; i < levels.size(); i++) {
-                if (i > 0) filter.append(" || ");
-                String level = escape(levels.get(i));
-                filter.append("targetLevel == '").append(level).append("'")
-                        .append(" || targetLevels == '").append(level).append("'");
-            }
-            filter.append(")");
-        }
-
-        return vectorStore.similaritySearch(SearchRequest.builder()
+        /*
+         * Do not push target-level matching into the vector-store filter.
+         * Existing uploads may store levels as targetLevel, targetLevels,
+         * comma-separated values, or legacy JSON-like metadata. Filtering
+         * those representations in Java makes retrieval backward compatible.
+         */
+        int retrievalK = Math.max(Math.max(1, topK), Math.min(200, Math.max(20, topK * 4)));
+        List<Document> candidates = vectorStore.similaritySearch(SearchRequest.builder()
                 .query(query == null || query.isBlank() ? subject + " concepts examples" : query)
-                .topK(Math.max(1, topK))
+                .topK(retrievalK)
                 .similarityThreshold(threshold)
                 .filterExpression(filter.toString())
                 .build());
+
+        List<String> levels = normalizeLevels(targetLevels);
+        if (levels.isEmpty()) return candidates.stream().limit(Math.max(1, topK)).toList();
+
+        List<Document> matched = candidates.stream()
+                .filter(document -> matchesAnyTargetLevel(document, levels))
+                .limit(Math.max(1, topK))
+                .toList();
+
+        return matched;
+    }
+
+    private boolean matchesAnyTargetLevel(Document document, List<String> requestedLevels) {
+        Map<String, Object> metadata = document.getMetadata();
+        String targetLevel = String.valueOf(metadata.getOrDefault("targetLevel", ""));
+        String targetLevels = String.valueOf(metadata.getOrDefault("targetLevels", ""));
+        String combined = (targetLevel + "," + targetLevels).toUpperCase();
+        return requestedLevels.stream().anyMatch(level -> containsLevelToken(combined, level));
+    }
+
+    private boolean containsLevelToken(String value, String level) {
+        if (value == null || value.isBlank()) return false;
+        String normalized = value.toUpperCase().replaceAll("[\\[\\]\"'\\s]", "");
+        for (String token : normalized.split(",")) {
+            if (level.equals(token)) return true;
+        }
+        return normalized.contains(level);
     }
 
     private List<String> normalizeLevels(List<String> values) {
@@ -99,6 +120,6 @@ public class UploadedSourceRetrievalService {
     }
 
     private String escape(String value) {
-        return value.replace("'", "\'");
+        return value.replace("'", "\\'");
     }
 }

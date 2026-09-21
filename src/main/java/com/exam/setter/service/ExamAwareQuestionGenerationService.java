@@ -338,6 +338,37 @@ public class ExamAwareQuestionGenerationService {
                 q.visualRequired(), q.visualType(), q.visualDescription());
     }
 
+    
+    private double lexicalSimilarity(String a, String b) {
+        Set<String> left = java.util.Arrays.stream(normalizeQuestion(a).split(" "))
+                .filter(s -> !s.isBlank())
+                .collect(Collectors.toSet());
+        Set<String> right = java.util.Arrays.stream(normalizeQuestion(b).split(" "))
+                .filter(s -> !s.isBlank())
+                .collect(Collectors.toSet());
+        if (left.isEmpty() || right.isEmpty()) return 0;
+        long intersection = left.stream().filter(right::contains).count();
+        return intersection / (double) (left.size() + right.size() - intersection);
+    }
+
+    private String normalizeQuestion(String value) {
+        return value == null ? "" : value.toLowerCase()
+                .replaceAll("[^a-z0-9 ]", " ")
+                .replaceAll("\\s+", " ")
+                .trim();
+    }
+
+    private String firstNonBlank(String first, String second, String fallback) {
+        if (first != null && !first.isBlank()) return first.trim();
+        if (second != null && !second.isBlank()) return second.trim();
+        return fallback;
+    }
+
+    private String escape(String value) {
+        return value == null ? "" : value.replace("'", "\\'");
+    }
+
+
     private String buildPyqPattern(QuestionGenerationRequest request, List<Document> retrievedPyqs) {
         List<PyqQuestionEntity> stored = request.subject() == null || request.subject().isBlank()
                 ? List.of()

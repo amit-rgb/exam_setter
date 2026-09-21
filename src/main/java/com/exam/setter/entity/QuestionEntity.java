@@ -49,6 +49,17 @@ public class QuestionEntity {
     private int marks;
     private String topic;
 
+    @Column(nullable = false)
+    @Builder.Default
+    private boolean visualRequired = false;
+
+    @Column(length = 40)
+    @Builder.Default
+    private String visualType = "NONE";
+
+    @Column(columnDefinition = "TEXT")
+    private String visualDescription;
+
     @Column(columnDefinition = "TEXT")
     private String sourceCitationsJson;
 

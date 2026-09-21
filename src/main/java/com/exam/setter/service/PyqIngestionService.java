@@ -104,6 +104,9 @@ public class PyqIngestionService {
             metadata.put("questionType", q.questionType() == null ? "" : q.questionType());
             metadata.put("difficulty", q.difficulty() == null ? "" : q.difficulty());
             metadata.put("questionNumber", q.questionNumber() == null ? 0 : q.questionNumber());
+            metadata.put("visualRequired", Boolean.TRUE.equals(q.visualRequired()));
+            metadata.put("visualType", q.visualType() == null ? "NONE" : q.visualType());
+            metadata.put("visualDescription", q.visualDescription() == null ? "" : q.visualDescription());
             metadata.put("fileName", file.getOriginalFilename());
             vectors.add(new Document(q.questionText(), metadata));
         }

@@ -4,6 +4,8 @@ import com.exam.setter.dto.ExamPaperResponse;
 import com.exam.setter.dto.GeneratedQuestion;
 import com.exam.setter.dto.QuestionGenerationRequest;
 import com.exam.setter.entity.ExamProfileEntity;
+import com.exam.setter.entity.PyqQuestionEntity;
+import com.exam.setter.repository.PyqQuestionRepository;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -39,6 +41,7 @@ public class ExamAwareQuestionGenerationService {
     private final QuestionSimilarityGuardService similarityGuard;
     private final ObjectMapper mapper;
     private final GenerationDiagnosticService diagnosticService;
+    private final PyqQuestionRepository pyqQuestionRepository;
 
     public ExamAwareQuestionGenerationService(ChatClient.Builder builder,
                                               VectorStore vectorStore,
@@ -47,7 +50,8 @@ public class ExamAwareQuestionGenerationService {
                                               ExamProfileService profileService,
                                               QuestionSimilarityGuardService similarityGuard,
                                               ObjectMapper mapper,
-                                              GenerationDiagnosticService diagnosticService) {
+                                              GenerationDiagnosticService diagnosticService,
+                                              PyqQuestionRepository pyqQuestionRepository) {
         this.chatClient = builder.build();
         this.vectorStore = vectorStore;
         this.ncertRetrieval = ncertRetrieval;
@@ -56,6 +60,7 @@ public class ExamAwareQuestionGenerationService {
         this.similarityGuard = similarityGuard;
         this.mapper = mapper.copy().configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
         this.diagnosticService = diagnosticService;
+        this.pyqQuestionRepository = pyqQuestionRepository;
     }
 
     public List<GeneratedQuestion> generate(QuestionGenerationRequest request) {
@@ -107,7 +112,7 @@ public class ExamAwareQuestionGenerationService {
         String syllabusText = join(syllabus, "\n--- SYLLABUS ---\n");
         String pyqText = join(pyqs, "\n--- PREVIOUS YEAR QUESTION ---\n");
         String ncertText = join(ncert, "\n--- NCERT ---\n");
-        String pyqPattern = buildPyqPattern(pyqs, request.questionType());
+        String pyqPattern = buildPyqPattern(request, pyqs);
 
         List<String> citations = generationContext.stream().map(this::citation).distinct().limit(16).toList();
         Map<String, Object> constraints = profile == null ? Map.of() : profileService.toGenerationConstraints(profile);
@@ -333,25 +338,33 @@ public class ExamAwareQuestionGenerationService {
                 q.visualRequired(), q.visualType(), q.visualDescription());
     }
 
-    private String buildPyqPattern(List<Document> pyqs, com.exam.setter.model.QuestionType requestedType) {
-        if (pyqs == null || pyqs.isEmpty()) {
-            return requestedType == com.exam.setter.model.QuestionType.MIXED
-                    ? "No PYQ pattern was retrieved. Use a balanced mix of MCQ, ASSERTION_REASON, NUMERICAL, SHORT_ANSWER and, where academically appropriate, CASE_BASED/STATEMENT_BASED questions. Include at most one visual question for every 5 questions unless the subject naturally requires more."
-                    : "No PYQ pattern was retrieved. Follow the requested section type.";
+    private String buildPyqPattern(QuestionGenerationRequest request, List<Document> retrievedPyqs) {
+        List<PyqQuestionEntity> stored = request.subject() == null || request.subject().isBlank()
+                ? List.of()
+                : pyqQuestionRepository.findBySubjectIgnoreCase(request.subject().trim());
+
+        if (stored.isEmpty()) {
+            if (retrievedPyqs == null || retrievedPyqs.isEmpty()) {
+                return request.questionType() == com.exam.setter.model.QuestionType.MIXED
+                        ? "No PYQ pattern was retrieved. Use a balanced mix of MCQ, ASSERTION_REASON, NUMERICAL, SHORT_ANSWER and, where academically appropriate, CASE_BASED/STATEMENT_BASED questions. Include visual questions only when the subject naturally requires them."
+                        : "No PYQ pattern was retrieved. Follow the requested section type.";
+            }
+            return "Pattern sample available from retrieved PYQs only; observed questions=" + retrievedPyqs.size()
+                    + ". Use their format variety as guidance and never copy wording.";
         }
 
         Map<String, Integer> typeCounts = new LinkedHashMap<>();
         Map<String, Integer> visualCounts = new LinkedHashMap<>();
         int visualTotal = 0;
-        for (Document d : pyqs) {
-            String type = String.valueOf(d.getMetadata().getOrDefault("questionType", "OTHER")).trim().toUpperCase();
-            if (type.isBlank() || "NULL".equals(type)) type = "OTHER";
+        for (PyqQuestionEntity q : stored) {
+            String type = q.getQuestionType() == null || q.getQuestionType().isBlank()
+                    ? "OTHER" : q.getQuestionType().trim().toUpperCase();
             typeCounts.merge(type, 1, Integer::sum);
-            boolean visual = Boolean.parseBoolean(String.valueOf(d.getMetadata().getOrDefault("visualRequired", "false")));
-            if (visual) {
+            if (q.isVisualRequired()) {
                 visualTotal++;
-                String visualType = String.valueOf(d.getMetadata().getOrDefault("visualType", "OTHER")).trim().toUpperCase();
-                visualCounts.merge(visualType.isBlank() ? "OTHER" : visualType, 1, Integer::sum);
+                String visualType = q.getVisualType() == null || q.getVisualType().isBlank()
+                        ? "OTHER" : q.getVisualType().trim().toUpperCase();
+                visualCounts.merge(visualType, 1, Integer::sum);
             }
         }
 
@@ -360,31 +373,14 @@ public class ExamAwareQuestionGenerationService {
                 .collect(Collectors.joining(", "));
         String visualSummary = visualCounts.isEmpty()
                 ? "none detected"
-                : visualCounts.entrySet().stream().map(e -> e.getKey() + "=" + e.getValue()).collect(Collectors.joining(", "));
-        return "Observed PYQ questions=" + pyqs.size()
+                : visualCounts.entrySet().stream()
+                .map(e -> e.getKey() + "=" + e.getValue())
+                .collect(Collectors.joining(", "));
+
+        return "Observed stored PYQs=" + stored.size()
                 + "; question types: " + typeSummary
                 + "; visual questions=" + visualTotal
                 + "; visual formats: " + visualSummary
                 + ". Match the relative variety and coverage where possible. Never copy PYQ wording.";
     }
 
-    private double lexicalSimilarity(String a, String b) {
-        Set<String> left = java.util.Arrays.stream(normalizeQuestion(a).split(" ")).filter(s -> !s.isBlank()).collect(Collectors.toSet());
-        Set<String> right = java.util.Arrays.stream(normalizeQuestion(b).split(" ")).filter(s -> !s.isBlank()).collect(Collectors.toSet());
-        if (left.isEmpty() || right.isEmpty()) return 0;
-        long intersection = left.stream().filter(right::contains).count();
-        return intersection / (double) (left.size() + right.size() - intersection);
-    }
-
-    private String normalizeQuestion(String value) {
-        return value == null ? "" : value.toLowerCase().replaceAll("[^a-z0-9 ]", " ").replaceAll("\\s+", " ").trim();
-    }
-
-    private String firstNonBlank(String first, String second, String fallback) {
-        if (first != null && !first.isBlank()) return first.trim();
-        if (second != null && !second.isBlank()) return second.trim();
-        return fallback;
-    }
-
-    private String escape(String value) { return value == null ? "" : value.replace("'", "\\'"); }
-}

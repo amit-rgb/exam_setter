@@ -7,7 +7,7 @@ RUN mvn -B -q clean package -DskipTests
 
 FROM eclipse-temurin:21-jre
 WORKDIR /app
-RUN groupadd --system app && useradd --system --gid app app
+RUN groupadd --system app && useradd --system --gid app app && mkdir -p /app/logs && chown -R app:app /app
 COPY --from=build /workspace/target/exam-paper-setter-*.jar /app/app.jar
 USER app
 EXPOSE 8080

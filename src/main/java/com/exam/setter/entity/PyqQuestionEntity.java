@@ -53,6 +53,17 @@ public class PyqQuestionEntity {
 
     private Integer marks;
 
+    @Column(nullable = false)
+    @Builder.Default
+    private boolean visualRequired = false;
+
+    @Column(length = 40)
+    @Builder.Default
+    private String visualType = "NONE";
+
+    @Column(columnDefinition = "TEXT")
+    private String visualDescription;
+
     @Column(length = 500)
     private String paperName;
 

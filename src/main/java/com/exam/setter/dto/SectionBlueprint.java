@@ -13,5 +13,11 @@ public record SectionBlueprint(
         @Min(1) @Max(50) int questionCount,
         @Min(1) @Max(100) int marksPerQuestion,
         @Min(0) @Max(100) double negativeMarks,
-        @NotBlank @Size(max = 20) String difficulty
-) {}
+        @NotBlank @Size(max = 20) String difficulty,
+        @Size(max = 200) String topic
+) {
+    public SectionBlueprint(String sectionName, QuestionType questionType, int questionCount,
+                            int marksPerQuestion, double negativeMarks, String difficulty) {
+        this(sectionName, questionType, questionCount, marksPerQuestion, negativeMarks, difficulty, null);
+    }
+}

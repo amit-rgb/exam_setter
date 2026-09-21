@@ -47,6 +47,11 @@ public class PyqIngestionService {
      */
     public List<PyqQuestionEntity> ingestPdf(MultipartFile file, String examId, int year,
                                              String paperName, String subject) throws IOException {
+        return ingestPdf(file, examId, year, paperName, subject, null);
+    }
+
+    public List<PyqQuestionEntity> ingestPdf(MultipartFile file, String examId, int year,
+                                             String paperName, String subject, String targetLevel) throws IOException {
         if (file == null || file.isEmpty()) throw new IllegalArgumentException("A PYQ PDF is required.");
         if (year < 1900 || year > 2100) throw new IllegalArgumentException("PYQ year is invalid.");
         if (examId == null || examId.isBlank()) throw new IllegalArgumentException("examId is required.");
@@ -81,6 +86,9 @@ public class PyqIngestionService {
                     .questionType(q.questionType())
                     .difficulty(q.difficulty())
                     .marks(q.marks())
+                    .visualRequired(Boolean.TRUE.equals(q.visualRequired()))
+                    .visualType(q.visualType() == null ? "NONE" : q.visualType())
+                    .visualDescription(q.visualDescription())
                     .paperName(paperName)
                     .sourceFileName(file.getOriginalFilename())
                     .createdAt(Instant.now())
@@ -94,10 +102,14 @@ public class PyqIngestionService {
             metadata.put("year", year);
             metadata.put("paperName", paperName == null ? "" : paperName);
             metadata.put("subject", firstNonBlank(q.subject(), subject));
+            if (targetLevel != null && !targetLevel.isBlank()) metadata.put("targetLevels", targetLevel.trim().toUpperCase());
             metadata.put("topic", q.topic() == null ? "" : q.topic());
             metadata.put("questionType", q.questionType() == null ? "" : q.questionType());
             metadata.put("difficulty", q.difficulty() == null ? "" : q.difficulty());
             metadata.put("questionNumber", q.questionNumber() == null ? 0 : q.questionNumber());
+            metadata.put("visualRequired", Boolean.TRUE.equals(q.visualRequired()));
+            metadata.put("visualType", q.visualType() == null ? "NONE" : q.visualType());
+            metadata.put("visualDescription", q.visualDescription() == null ? "" : q.visualDescription());
             metadata.put("fileName", file.getOriginalFilename());
             vectors.add(new Document(q.questionText(), metadata));
         }

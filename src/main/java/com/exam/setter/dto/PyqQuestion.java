@@ -6,11 +6,6 @@ import jakarta.validation.constraints.NotBlank;
 
 import java.util.List;
 
-/**
- * Structured representation of a previous-year question.
- * Kept separate from generated QuestionEntity so PYQ analysis can evolve
- * without coupling the generation persistence model to source-paper parsing.
- */
 public record PyqQuestion(
         @NotBlank String examId,
         int year,
@@ -23,5 +18,8 @@ public record PyqQuestion(
         String questionType,
         String difficulty,
         @Min(0) @Max(1000) Integer marks,
-        String sourceFileName
+        String sourceFileName,
+        Boolean visualRequired,
+        String visualType,
+        String visualDescription
 ) {}

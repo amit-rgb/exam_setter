@@ -46,7 +46,7 @@ public class HtmlExamPaperRenderer {
         sb.append("  .q-text { font-weight: bold; margin-bottom: 4px; }\n");
         sb.append("  .options-table { width: 100%; margin-left: 15px; margin-top: 4px; border-collapse: collapse; }\n");
         sb.append("  .options-table td { padding: 3px 0; vertical-align: top; }\n");
-        sb.append("  .solution-box { margin-top: 6px; margin-left: 15px; padding: 6px 8px; background: #fdf6e2; border-left: 3px solid #b58900; font-size: 9.5pt; }\n");
+        sb.append("  .visual-box { margin: 8px 0 8px 15px; padding: 8px 10px; border: 1px solid #777777; background: #fafafa; text-align: center; }\n  .visual-label { font-size: 8.5pt; font-weight: bold; text-transform: uppercase; margin-bottom: 4px; }\n  .visual-description { font-size: 9pt; }\n  .solution-box { margin-top: 6px; margin-left: 15px; padding: 6px 8px; background: #fdf6e2; border-left: 3px solid #b58900; font-size: 9.5pt; }\n");
         sb.append("</style>\n");
         sb.append("</head>\n");
         sb.append("<body>\n");
@@ -107,7 +107,15 @@ public class HtmlExamPaperRenderer {
                             .append(escapeXml(cleanMath(q.getQuestionText())))
                             .append("</div>\n");
 
-                    // Render MCQ Options using strict XML tables
+                    // Preserve visual requirements in the exported paper.
+                    if (q.isVisualRequired() || (q.getVisualType() != null && !"NONE".equalsIgnoreCase(q.getVisualType()))) {
+                        sb.append("  <div class=\"visual-box\">");
+                        sb.append("<div class=\"visual-label\">").append(escapeXml(q.getVisualType())).append(" / FIGURE REQUIRED</div>");
+                        sb.append("<div class=\"visual-description\">").append(escapeXml(q.getVisualDescription())).append("</div>");
+                        sb.append("</div>\\n");
+                    }
+
+                    // Render options using strict XML tables
                     if (q.getOptions() != null && !q.getOptions().isEmpty()) {
                         sb.append("  <table class=\"options-table\">\n");
                         char label = 'A';

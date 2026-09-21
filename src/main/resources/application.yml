@@ -50,6 +50,13 @@ spring:
         distance-type: COSINE_DISTANCE
         initialize-schema: true
 
+logging:
+  file:
+    name: ${LOG_FILE:./logs/exam-paper-generator.log}
+  level:
+    root: ${LOG_LEVEL:INFO}
+    com.exam.setter: ${APP_LOG_LEVEL:DEBUG}
+
 server:
   port: ${SERVER_PORT:8080}
   forward-headers-strategy: framework
@@ -61,6 +68,7 @@ app:
   verification:
     enabled: ${APP_VERIFICATION_ENABLED:false}
   ncert:
+    admin-ingestion-enabled: ${NCERT_ADMIN_INGESTION_ENABLED:false}
     ingestion:
       enabled: ${NCERT_INGESTION_ENABLED:false}
       root: ${NCERT_CORPUS_ROOT:./NCERT}

@@ -80,9 +80,9 @@ async function initBlueprintPage(){
  if(ctx.subject)subject.value=ctx.subject;
  setLevels(levelsEl,ctx.targetLevels||ctx.level?.split(',')||[]);
  const container=document.getElementById('sectionsContainer'), mobile=document.getElementById('mobileSectionsContainer');
- const sourceIds=['SYLLABUS','TEACHER_NOTES','PREVIOUS_YEAR_QUESTION_PAPER','OTHER'];
+ const sourceIds=['NCERT','SYLLABUS','TEACHER_NOTES','PREVIOUS_YEAR_QUESTION_PAPER','OTHER'];
  function selectedSources(){return sourceIds.filter(function(v){const e=document.getElementById('source-'+v);return e&&e.checked})}
- function applySourceContext(){const saved=ctx.knowledgeSources||[];sourceIds.forEach(function(v){const e=document.getElementById('source-'+v);if(e)e.checked=saved.includes(v)});if(!saved.length){const e=document.getElementById('source-TEACHER_NOTES');if(e)e.checked=true}}
+ function applySourceContext(){const saved=ctx.knowledgeSources||[];sourceIds.forEach(function(v){const e=document.getElementById('source-'+v);if(e)e.checked=saved.includes(v)});if(!saved.length){const e=document.getElementById('source-NCERT');if(e)e.checked=true}}
  function add(name,type,count,marks,neg,diff,topic){
    name=name||'Section A: MCQs';type=type||'MCQ';count=count||3;marks=marks||4;neg=neg==null?1:neg;diff=diff||'EASY';topic=topic||'';
    const id='s'+Math.random().toString(36).slice(2);
@@ -118,7 +118,7 @@ async function initBlueprintPage(){
  form.addEventListener('submit',async function(e){
    e.preventDefault();
    const sources=selectedSources();
-   if(!sources.length){alertBox('Select at least one knowledge source: Syllabus, Teacher Notes, Previous Year Question Paper, or Other.',true);return}
+   if(!sources.length){alertBox('Select at least one knowledge source: NCERT, Syllabus, Teacher Notes, Previous Year Question Paper, or Other.',true);return}
    const rows=[...container.children].map(function(r){return{sectionName:r.querySelector('.sec-name').value,questionType:r.querySelector('.sec-type').value,questionCount:+r.querySelector('.sec-count').value,marksPerQuestion:+r.querySelector('.sec-marks').value,negativeMarks:+r.querySelector('.sec-neg').value,difficulty:r.querySelector('.sec-diff').value,topic:r.querySelector('.sec-topic').value||null}});
    if(!rows.length)return;
    const b=document.getElementById('assembleBtn');b.disabled=true;b.textContent='Generating questions…';

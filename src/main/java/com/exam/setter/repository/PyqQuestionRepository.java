@@ -9,4 +9,5 @@ import java.util.UUID;
 public interface PyqQuestionRepository extends JpaRepository<PyqQuestionEntity, UUID> {
     List<PyqQuestionEntity> findByExamIdIgnoreCaseOrderByYearAscQuestionNumberAsc(String examId);
     List<PyqQuestionEntity> findByExamIdIgnoreCaseAndSubjectIgnoreCase(String examId, String subject);
+    List<PyqQuestionEntity> findBySubjectIgnoreCase(String subject);
 }

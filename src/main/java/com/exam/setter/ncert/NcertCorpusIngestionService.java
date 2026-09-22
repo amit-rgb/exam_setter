@@ -1,6 +1,8 @@
 package com.exam.setter.ncert;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.exam.setter.service.IngestionTrackingService;
+import com.exam.setter.service.StructureAwareChunker;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
@@ -34,6 +36,8 @@ public class NcertCorpusIngestionService {
     private final VectorStore vectorStore;
     private final NcertCorpusRepository repository;
     private final DataSource dataSource;
+    private final StructureAwareChunker chunker;
+    private final IngestionTrackingService tracking;
     private final Path root;
     private final Path manifestPath;
     private final boolean failFast;
@@ -45,6 +49,7 @@ public class NcertCorpusIngestionService {
 
     public NcertCorpusIngestionService(
             ObjectMapper objectMapper, VectorStore vectorStore, NcertCorpusRepository repository, DataSource dataSource,
+            StructureAwareChunker chunker, IngestionTrackingService tracking,
             @Value("${app.ncert.ingestion.root:./NCERT}") String root,
             @Value("${app.ncert.ingestion.manifest:./NCERT/manifest.json}") String manifest,
             @Value("${app.ncert.ingestion.fail-fast:false}") boolean failFast,
@@ -57,6 +62,8 @@ public class NcertCorpusIngestionService {
         this.vectorStore = vectorStore;
         this.repository = repository;
         this.dataSource = dataSource;
+        this.chunker = chunker;
+        this.tracking = tracking;
         this.root = Path.of(root).toAbsolutePath().normalize();
         this.manifestPath = Path.of(manifest).toAbsolutePath().normalize();
         this.failFast = failFast;
@@ -117,6 +124,11 @@ public class NcertCorpusIngestionService {
             throw new IOException("Manifest SHA-256 mismatch for " + entry.fileName());
         }
         if (previous != null) deleteExistingChunks(entry.documentKey(), previous.chunkVersion(), previous.chunkCount());
+        tracking.start(entry.documentKey(), entry.fileName(), "NCERT", "TEXTBOOK", entry.subject(),
+                entry.targetLevels() == null || entry.targetLevels().isEmpty()
+                        ? List.of(upper(entry.classLevel()))
+                        : entry.targetLevels().stream().map(this::upper).distinct().toList(),
+                "v2", chunkVersion, actualHash);
         repository.start(entry, corpusVersion, actualHash, chunkVersion);
         try {
             int count = indexPdf(entry, corpusVersion, actualHash, pdf);
@@ -129,19 +141,22 @@ public class NcertCorpusIngestionService {
     }
 
     private int indexPdf(NcertCorpusManifest.Entry entry, String corpusVersion, String hash, Path pdf) throws IOException {
-        TokenTextSplitter splitter = new TokenTextSplitter(chunkSize, chunkOverlap, 10, 5000, true);
         List<Document> batch = new ArrayList<>(batchSize);
         int chunkIndex = 0;
+        int pageCount = 0;
         try {
+            tracking.status(entry.documentKey(), "PARSING");
             try (PDDocument document = Loader.loadPDF(pdf.toFile())) {
+                pageCount = document.getNumberOfPages();
                 PDFTextStripper stripper = new PDFTextStripper();
                 for (int page = 1; page <= document.getNumberOfPages(); page++) {
                     stripper.setStartPage(page);
                     stripper.setEndPage(page);
                     String text = normalize(stripper.getText(document));
                     if (text.isBlank()) continue;
+                    tracking.status(entry.documentKey(), "CHUNKING");
                     Document pageDocument = new Document(text, Map.of("pageNumber", page));
-                    for (Document chunk : splitter.apply(List.of(pageDocument))) {
+                    for (Document chunk : chunker.chunk(List.of(pageDocument), chunkSize * 5, chunkOverlap * 5, chunkVersion)) {
                         Map<String, Object> metadata = new HashMap<>(chunk.getMetadata());
                         metadata.put("source", "NCERT");
                         metadata.put("sourceType", "TEXTBOOK");
@@ -164,19 +179,22 @@ public class NcertCorpusIngestionService {
                         metadata.put("sourceUrl", entry.sourceUrl());
                         metadata.put("contentHash", hash);
                         metadata.put("chunkIndex", chunkIndex);
+                        metadata.put("pipelineVersion", "v2");
                         metadata.put("contentScope", blankToDefault(entry.contentScope(), "CHAPTER"));
                         metadata.put("pageNumber", page);
                         batch.add(new Document(deterministicChunkId(entry.documentKey(), chunkVersion, chunkIndex), chunk.getText(), metadata));
                         chunkIndex++;
-                        if (batch.size() >= batchSize) { vectorStore.add(batch); batch.clear(); }
+                        if (batch.size() >= batchSize) { tracking.status(entry.documentKey(), "INDEXING"); vectorStore.add(batch); batch.clear(); }
                     }
                 }
             }
-            if (!batch.isEmpty()) vectorStore.add(batch);
+            if (!batch.isEmpty()) { tracking.status(entry.documentKey(), "INDEXING"); vectorStore.add(batch); }
             log.info("Indexed {} NCERT chunks for {}", chunkIndex, entry.documentKey());
+            tracking.complete(entry.documentKey(), chunkIndex, pageCount);
             return chunkIndex;
         } catch (Exception ex) {
             deleteExistingChunks(entry.documentKey(), chunkVersion, chunkIndex);
+            tracking.fail(entry.documentKey(), ex.getMessage());
             throw ex instanceof IOException io ? io : new IOException(ex);
         }
     }

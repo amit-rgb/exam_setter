@@ -1,6 +1,7 @@
 package com.exam.setter.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
+import java.util.concurrent.atomic.AtomicBoolean;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.ai.document.Document;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -17,6 +18,7 @@ public class HybridRetrievalService {
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
+    private final AtomicBoolean indexesReady = new AtomicBoolean(false);
 
     public HybridRetrievalService(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
         this.jdbcTemplate = jdbcTemplate;
@@ -27,6 +29,7 @@ public class HybridRetrievalService {
                                         List<String> sourceTypes, int limit,
                                         String corpusVersion, String bookCode, Integer chapterNumber) {
         if (query == null || query.isBlank()) return List.of();
+        ensureIndexes();
 
         StringBuilder sql = new StringBuilder("""
             SELECT id, content, metadata::text AS metadata_text
@@ -67,6 +70,19 @@ public class HybridRetrievalService {
             }
             return new Document(rs.getString("id"), rs.getString("content"), metadata);
         });
+    }
+
+    private void ensureIndexes() {
+        if (indexesReady.get()) return;
+        try {
+            jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_document_embeddings_fts ON document_embeddings USING GIN (to_tsvector('simple', COALESCE(content,'')))");
+            jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_document_embeddings_document_key ON document_embeddings ((metadata->>'documentKey'))");
+            jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_document_embeddings_subject ON document_embeddings ((metadata->>'subject'))");
+            indexesReady.set(true);
+        } catch (Exception ignored) {
+            // Vector-store initialization may create the table after application startup.
+            // Retry lazily on the next keyword-search request.
+        }
     }
 
     public List<Document> expandContext(List<Document> seeds, int neighbors, int maxResults) {

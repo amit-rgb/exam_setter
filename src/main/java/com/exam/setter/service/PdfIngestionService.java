@@ -124,6 +124,8 @@ public class PdfIngestionService {
                 vectorStore.add(enrichedDocs.subList(i, Math.min(i + 50, enrichedDocs.size())));
             }
 
+            tracking.status(documentKey, "VALIDATING");
+            validateIndexedCount(documentKey, enrichedDocs.size());
             tracking.complete(documentKey, enrichedDocs.size(), countPages(tempPath));
             log.info("Completed production ingestion: {} chunks from {}", enrichedDocs.size(), file.getOriginalFilename());
             return enrichedDocs.size();
@@ -136,6 +138,12 @@ public class PdfIngestionService {
         } finally {
             Files.deleteIfExists(tempPath);
         }
+    }
+
+    private void validateIndexedCount(String documentKey, int expected) {
+        // VectorStore.add is synchronous; the validation is intentionally lightweight.
+        // A zero/negative expected count is always a pipeline failure.
+        if (expected <= 0) throw new IllegalStateException("No chunks were indexed for document " + documentKey);
     }
 
     private int countPages(Path pdf) {

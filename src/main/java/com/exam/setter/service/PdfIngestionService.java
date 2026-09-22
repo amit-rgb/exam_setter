@@ -4,8 +4,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.reader.tika.TikaDocumentReader;
-import org.springframework.ai.transformer.splitter.TokenTextSplitter;
 import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -26,10 +26,27 @@ public class PdfIngestionService {
     private static final long MAX_FILE_SIZE_BYTES = 50L * 1024 * 1024;
     private static final int MAX_TARGET_LEVELS_FIELD_LENGTH = 500;
     private static final List<String> GENERIC_UPLOAD_TYPES = List.of("STUDY_NOTES", "QUESTION_BANK", "SYLLABUS", "REFERENCE", "TEXTBOOK");
-    private final VectorStore vectorStore;
+    private static final String PIPELINE_VERSION = "v2";
 
-    public PdfIngestionService(VectorStore vectorStore) {
+    private final VectorStore vectorStore;
+    private final StructureAwareChunker chunker;
+    private final IngestionTrackingService tracking;
+    private final int chunkSizeChars;
+    private final int chunkOverlapChars;
+    private final String chunkVersion;
+
+    public PdfIngestionService(VectorStore vectorStore,
+                               StructureAwareChunker chunker,
+                               IngestionTrackingService tracking,
+                               @Value("${app.ingestion.chunk-size-chars:2400}") int chunkSizeChars,
+                               @Value("${app.ingestion.chunk-overlap-chars:400}") int chunkOverlapChars,
+                               @Value("${app.ingestion.chunk-version:v2}") String chunkVersion) {
         this.vectorStore = vectorStore;
+        this.chunker = chunker;
+        this.tracking = tracking;
+        this.chunkSizeChars = Math.max(1200, chunkSizeChars);
+        this.chunkOverlapChars = Math.max(0, Math.min(chunkOverlapChars, this.chunkSizeChars / 3));
+        this.chunkVersion = chunkVersion;
     }
 
     public int ingestPdfFile(MultipartFile file, String subject, String targetLevel, String sourceType) throws IOException {
@@ -51,47 +68,82 @@ public class PdfIngestionService {
         }
 
         String normalizedSubject = subject.trim().toLowerCase();
-        log.info("Starting ingestion for: {} ({} bytes) for levels {} as {}", file.getOriginalFilename(), file.getSize(), targetLevels, normalizedSourceType);
+        String contentHash = sha256File(file);
+        String documentKey = "UPLOAD-" + sha256Text(
+                contentHash + "|" + normalizedSubject + "|" + targetLevels + "|" + normalizedSourceType);
+
+        if (tracking.existsCompleted(documentKey, contentHash, chunkVersion)) {
+            log.info("Skipping unchanged upload: {}", file.getOriginalFilename());
+            return 0;
+        }
+
+        tracking.start(documentKey, file.getOriginalFilename(), "USER_UPLOAD", normalizedSourceType,
+                normalizedSubject, targetLevels, PIPELINE_VERSION, chunkVersion, contentHash);
+
+        log.info("Starting production ingestion: {} ({} bytes) levels={} type={}",
+                file.getOriginalFilename(), file.getSize(), targetLevels, normalizedSourceType);
 
         Path tempPath = Files.createTempFile("pdf_ingest_", ".pdf");
-        file.transferTo(tempPath);
-        List<Document> extractedDocs;
         try {
-            extractedDocs = new TikaDocumentReader(new FileSystemResource(tempPath.toFile())).get();
+            file.transferTo(tempPath);
+            tracking.status(documentKey, "PARSING");
+            List<Document> extractedDocs = new TikaDocumentReader(new FileSystemResource(tempPath.toFile())).get();
+
+            if (extractedDocs.stream().noneMatch(d -> d.getText() != null && !d.getText().isBlank())) {
+                throw new IllegalArgumentException("No readable text was extracted from the PDF. The document may require OCR.");
+            }
+
+            tracking.status(documentKey, "CHUNKING");
+            List<Document> chunkedDocs = chunker.chunk(extractedDocs, chunkSizeChars, chunkOverlapChars, chunkVersion);
+            if (chunkedDocs.isEmpty()) throw new IllegalArgumentException("The PDF did not produce indexable text chunks.");
+
+            List<Document> enrichedDocs = new java.util.ArrayList<>();
+            for (int i = 0; i < chunkedDocs.size(); i++) {
+                Document doc = chunkedDocs.get(i);
+                Map<String, Object> metadata = new HashMap<>(doc.getMetadata());
+                metadata.put("source", "USER_UPLOAD");
+                metadata.put("sourceType", normalizedSourceType);
+                metadata.put("subject", normalizedSubject);
+                metadata.put("targetLevels", String.join(",", targetLevels));
+                metadata.put("targetLevel", targetLevels.get(0));
+                metadata.put("fileName", file.getOriginalFilename());
+                metadata.put("documentKey", documentKey);
+                metadata.put("contentHash", contentHash);
+                metadata.put("pipelineVersion", PIPELINE_VERSION);
+                metadata.put("chunkIndex", i);
+                metadata.put("chunkVersion", chunkVersion);
+                if (additionalMetadata != null) metadata.putAll(additionalMetadata);
+                enrichedDocs.add(new Document("upload-" + contentHash.substring(0, 24) + "-" + i, doc.getText(), metadata));
+            }
+
+            tracking.status(documentKey, "INDEXING");
+            vectorStore.delete("documentKey == '" + escape(documentKey) + "'");
+            for (int i = 0; i < enrichedDocs.size(); i += 50) {
+                vectorStore.add(enrichedDocs.subList(i, Math.min(i + 50, enrichedDocs.size())));
+            }
+
+            tracking.complete(documentKey, enrichedDocs.size(), countPages(extractedDocs));
+            log.info("Completed production ingestion: {} chunks from {}", enrichedDocs.size(), file.getOriginalFilename());
+            return enrichedDocs.size();
+        } catch (IOException | IllegalArgumentException ex) {
+            tracking.fail(documentKey, ex.getMessage());
+            throw ex;
+        } catch (Exception ex) {
+            tracking.fail(documentKey, ex.getMessage());
+            throw new IOException("Document ingestion failed: " + ex.getMessage(), ex);
         } finally {
             Files.deleteIfExists(tempPath);
         }
+    }
 
-        if (extractedDocs.stream().noneMatch(d -> d.getText() != null && !d.getText().isBlank())) {
-            throw new IllegalArgumentException("No readable text was extracted from the PDF.");
-        }
-
-        String documentKey = "UPLOAD-" + sha256Hex(
-                (file.getOriginalFilename() == null ? "" : file.getOriginalFilename())
-                        + "|" + normalizedSubject + "|" + targetLevels + "|" + normalizedSourceType + "|" + file.getSize());
-
-        List<Document> chunkedDocs = new TokenTextSplitter(500, 80, 10, 5000, true).apply(extractedDocs);
-        List<Document> enrichedDocs = chunkedDocs.stream().map(doc -> {
-            Map<String, Object> metadata = new HashMap<>(doc.getMetadata());
-            metadata.put("source", "USER_UPLOAD");
-            metadata.put("sourceType", normalizedSourceType);
-            metadata.put("subject", normalizedSubject);
-            metadata.put("targetLevels", String.join(",", targetLevels));
-            metadata.put("targetLevel", targetLevels.get(0));
-            metadata.put("fileName", file.getOriginalFilename());
-            metadata.put("documentKey", documentKey);
-            if (additionalMetadata != null) metadata.putAll(additionalMetadata);
-            return new Document(doc.getText(), metadata);
-        }).toList();
-
-        if (enrichedDocs.isEmpty()) throw new IllegalArgumentException("The PDF did not produce indexable text chunks.");
-
-        for (int i = 0; i < enrichedDocs.size(); i += 50) {
-            int end = Math.min(i + 50, enrichedDocs.size());
-            vectorStore.add(enrichedDocs.subList(i, end));
-        }
-        log.info("Successfully ingested {} chunks from {} as {}", enrichedDocs.size(), file.getOriginalFilename(), normalizedSourceType);
-        return enrichedDocs.size();
+    private int countPages(List<Document> documents) {
+        return documents.stream()
+                .map(d -> d.getMetadata().get("pageNumber"))
+                .filter(v -> v != null)
+                .mapToInt(v -> {
+                    try { return Integer.parseInt(String.valueOf(v)); } catch (NumberFormatException e) { return 0; }
+                })
+                .max().orElse(0);
     }
 
     private List<String> parseTargetLevels(String rawTargetLevels) {
@@ -116,13 +168,31 @@ public class PdfIngestionService {
         if (sourceType == null || sourceType.isBlank() || sourceType.length() > 50) throw new IllegalArgumentException("Source type is required and must be at most 50 characters.");
     }
 
-    private String sha256Hex(String value) throws IOException {
+    private String sha256File(MultipartFile file) throws IOException {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            try (java.io.InputStream input = file.getInputStream()) {
+                byte[] buffer = new byte[1024 * 1024];
+                int read;
+                while ((read = input.read(buffer)) >= 0) if (read > 0) digest.update(buffer, 0, read);
+            }
+            return java.util.HexFormat.of().formatHex(digest.digest());
+        } catch (Exception ex) {
+            throw new IOException("Unable to create document hash", ex);
+        }
+    }
+
+    private String sha256Text(String value) throws IOException {
         try {
             return java.util.HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
                     .digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
         } catch (Exception ex) {
             throw new IOException("Unable to create document key", ex);
         }
+    }
+
+    private String escape(String value) {
+        return value == null ? "" : value.replace("'", "\\'");
     }
 
     List<String> parseTargetLevelsForTest(String rawTargetLevels) {

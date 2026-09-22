@@ -17,9 +17,11 @@ public class UploadedSourceRetrievalService {
 
     private static final List<String> KNOWLEDGE_TYPES = List.of("STUDY_NOTES", "REFERENCE", "TEXTBOOK");
     private final VectorStore vectorStore;
+    private final HybridRetrievalService hybridRetrieval;
 
-    public UploadedSourceRetrievalService(VectorStore vectorStore) {
+    public UploadedSourceRetrievalService(VectorStore vectorStore, HybridRetrievalService hybridRetrieval) {
         this.vectorStore = vectorStore;
+        this.hybridRetrieval = hybridRetrieval;
     }
 
     public List<Document> retrieveKnowledge(String subject, List<String> targetLevels, String query, int topK) {
@@ -86,10 +88,22 @@ public class UploadedSourceRetrievalService {
                 .filterExpression(filter.toString())
                 .build());
 
-        List<String> levels = normalizeLevels(targetLevels);
-        if (levels.isEmpty()) { log.info("Uploaded retrieval candidates={} (no level filter)", candidates.size()); return candidates.stream().limit(Math.max(1, topK)).toList(); }
+        List<Document> keyword = hybridRetrieval.keywordSearch(
+                query == null || query.isBlank() ? subject + " concepts examples" : query,
+                "USER_UPLOAD", subject,
+                sourceTypes, Math.min(40, Math.max(10, topK * 6)), null, null, null);
+        List<Document> merged = hybridRetrieval.merge(
+                query == null || query.isBlank() ? subject + " concepts examples" : query,
+                candidates, keyword, Math.min(20, Math.max(topK * 2, 10)));
+        List<Document> contextual = hybridRetrieval.expandContext(merged, 1, Math.min(30, Math.max(topK * 2, 10)));
 
-        List<Document> matched = candidates.stream()
+        List<String> levels = normalizeLevels(targetLevels);
+        if (levels.isEmpty()) {
+            log.info("Uploaded retrieval candidates={} (no level filter)", contextual.size());
+            return contextual.stream().limit(Math.max(1, topK)).toList();
+        }
+
+        List<Document> matched = contextual.stream()
                 .filter(document -> matchesAnyTargetLevel(document, levels))
                 .limit(Math.max(1, topK))
                 .toList();

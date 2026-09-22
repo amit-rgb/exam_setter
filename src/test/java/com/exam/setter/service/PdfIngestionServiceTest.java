@@ -13,7 +13,7 @@ class PdfIngestionServiceTest {
 
     @Test
     void rejectsPreviousYearPapersOnGenericUploadPath() {
-        PdfIngestionService service = new PdfIngestionService(mock(VectorStore.class));
+        PdfIngestionService service = new PdfIngestionService(mock(VectorStore.class), mock(StructureAwareChunker.class), mock(IngestionTrackingService.class), 2400, 400, "v2");
         var file = new org.springframework.mock.web.MockMultipartFile(
                 "file", "paper.pdf", "application/pdf", "pdf".getBytes(StandardCharsets.UTF_8));
 

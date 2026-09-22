@@ -56,12 +56,12 @@ public class IngestionDashboardService {
             return row;
         });
 
+        List<Map<String, Object>> ingestion = tracking.list();
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("totalDocuments", documents.size());
         response.put("totalChunks", documents.stream()
                 .mapToLong(d -> ((Number) d.get("indexedChunks")).longValue()).sum());
         response.put("documents", documents);
-        List<Map<String,Object>> ingestion = tracking.list();
         response.put("ingestionStatus", ingestion);
         response.put("ingestionMetrics", buildMetrics(ingestion));
         return response;
@@ -79,7 +79,12 @@ public class IngestionDashboardService {
                 WHERE metadata->>'documentKey' = ?
                    OR (metadata->>'documentKey' IS NULL AND metadata->>'fileName' = ?)
                 ORDER BY
-                    CASE WHEN metadata->>'pageNumber' ~ '^[0-9]+""", (rs, rowNum) -> {
+                    CASE WHEN metadata->>'pageNumber' ~ '^[0-9]+$'
+                         THEN (metadata->>'pageNumber')::integer END NULLS LAST,
+                    CASE WHEN metadata->>'chunkIndex' ~ '^[0-9]+$'
+                         THEN (metadata->>'chunkIndex')::integer END NULLS LAST,
+                    id
+                """, (rs, rowNum) -> {
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("content", rs.getString("content"));
             row.put("fileName", rs.getString("file_name"));
@@ -96,96 +101,21 @@ public class IngestionDashboardService {
         return response;
     }
 
-    private Map<String,Object> buildMetrics(List<Map<String,Object>> rows) {
-        Map<String,Object> metrics = new LinkedHashMap<>();
+    private Map<String, Object> buildMetrics(List<Map<String, Object>> rows) {
+        Map<String, Object> metrics = new LinkedHashMap<>();
         metrics.put("trackedDocuments", rows.size());
         metrics.put("completed", rows.stream().filter(r -> "COMPLETED".equals(r.get("status"))).count());
         metrics.put("failed", rows.stream().filter(r -> "FAILED".equals(r.get("status"))).count());
         metrics.put("active", rows.stream().filter(r -> {
             Object status = r.get("status");
-            return status != null && !List.of("COMPLETED","FAILED").contains(status.toString());
+            return status != null && !List.of("COMPLETED", "FAILED").contains(status.toString());
         }).count());
-        metrics.put("totalPages", rows.stream().map(r -> r.get("totalPages")).filter(v -> v instanceof Number)
-                .mapToLong(v -> ((Number)v).longValue()).sum());
-        metrics.put("totalTrackedChunks", rows.stream().map(r -> r.get("totalChunks")).filter(v -> v instanceof Number)
-                .mapToLong(v -> ((Number)v).longValue()).sum());
-        return metrics;
-    }
-
-    private String firstNonBlank(String first, String second) {
-        return first != null && !first.isBlank() ? first : second;
-    }
-}
- THEN (metadata->>'pageNumber')::integer END NULLS LAST,
-                    CASE WHEN metadata->>'chunkIndex' ~ '^[0-9]+""", (rs, rowNum) -> {
-            Map<String, Object> row = new LinkedHashMap<>();
-            row.put("content", rs.getString("content"));
-            row.put("fileName", rs.getString("file_name"));
-            row.put("chunkIndex", rs.getString("chunk_index"));
-            row.put("pageNumber", rs.getString("page_number"));
-            row.put("sourceType", rs.getString("source_type"));
-            return row;
-        }, documentKey);
-
-        Map<String, Object> response = new LinkedHashMap<>();
-        response.put("documentKey", documentKey);
-        response.put("chunkCount", chunks.size());
-        response.put("chunks", chunks);
-        return response;
-    }
-
-    private Map<String,Object> buildMetrics(List<Map<String,Object>> rows) {
-        Map<String,Object> metrics = new LinkedHashMap<>();
-        metrics.put("trackedDocuments", rows.size());
-        metrics.put("completed", rows.stream().filter(r -> "COMPLETED".equals(r.get("status"))).count());
-        metrics.put("failed", rows.stream().filter(r -> "FAILED".equals(r.get("status"))).count());
-        metrics.put("active", rows.stream().filter(r -> {
-            Object status = r.get("status");
-            return status != null && !List.of("COMPLETED","FAILED").contains(status.toString());
-        }).count());
-        metrics.put("totalPages", rows.stream().map(r -> r.get("totalPages")).filter(v -> v instanceof Number)
-                .mapToLong(v -> ((Number)v).longValue()).sum());
-        metrics.put("totalTrackedChunks", rows.stream().map(r -> r.get("totalChunks")).filter(v -> v instanceof Number)
-                .mapToLong(v -> ((Number)v).longValue()).sum());
-        return metrics;
-    }
-
-    private String firstNonBlank(String first, String second) {
-        return first != null && !first.isBlank() ? first : second;
-    }
-}
- THEN (metadata->>'chunkIndex')::integer END NULLS LAST,
-                    id
-                """, (rs, rowNum) -> {
-            Map<String, Object> row = new LinkedHashMap<>();
-            row.put("content", rs.getString("content"));
-            row.put("fileName", rs.getString("file_name"));
-            row.put("chunkIndex", rs.getString("chunk_index"));
-            row.put("pageNumber", rs.getString("page_number"));
-            row.put("sourceType", rs.getString("source_type"));
-            return row;
-        }, documentKey);
-
-        Map<String, Object> response = new LinkedHashMap<>();
-        response.put("documentKey", documentKey);
-        response.put("chunkCount", chunks.size());
-        response.put("chunks", chunks);
-        return response;
-    }
-
-    private Map<String,Object> buildMetrics(List<Map<String,Object>> rows) {
-        Map<String,Object> metrics = new LinkedHashMap<>();
-        metrics.put("trackedDocuments", rows.size());
-        metrics.put("completed", rows.stream().filter(r -> "COMPLETED".equals(r.get("status"))).count());
-        metrics.put("failed", rows.stream().filter(r -> "FAILED".equals(r.get("status"))).count());
-        metrics.put("active", rows.stream().filter(r -> {
-            Object status = r.get("status");
-            return status != null && !List.of("COMPLETED","FAILED").contains(status.toString());
-        }).count());
-        metrics.put("totalPages", rows.stream().map(r -> r.get("totalPages")).filter(v -> v instanceof Number)
-                .mapToLong(v -> ((Number)v).longValue()).sum());
-        metrics.put("totalTrackedChunks", rows.stream().map(r -> r.get("totalChunks")).filter(v -> v instanceof Number)
-                .mapToLong(v -> ((Number)v).longValue()).sum());
+        metrics.put("totalPages", rows.stream().map(r -> r.get("totalPages"))
+                .filter(v -> v instanceof Number)
+                .mapToLong(v -> ((Number) v).longValue()).sum());
+        metrics.put("totalTrackedChunks", rows.stream().map(r -> r.get("totalChunks"))
+                .filter(v -> v instanceof Number)
+                .mapToLong(v -> ((Number) v).longValue()).sum());
         return metrics;
     }
 

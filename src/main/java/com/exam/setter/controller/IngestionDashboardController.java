@@ -4,6 +4,7 @@ import com.exam.setter.service.IngestionDashboardService;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.RequestParam;
 
 import java.util.Map;
 
@@ -20,5 +21,10 @@ public class IngestionDashboardController {
     @GetMapping("/ingested-documents")
     public Map<String, Object> ingestedDocuments() {
         return dashboardService.getDashboard();
+    }
+
+    @GetMapping("/ingested-documents/content")
+    public Map<String, Object> documentContent(@RequestParam String documentKey) {
+        return dashboardService.getDocumentContent(documentKey);
     }
 }

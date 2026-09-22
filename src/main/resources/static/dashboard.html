@@ -83,7 +83,7 @@ function render(){
     const chapter=[d.chapterTitle,d.topic].filter(Boolean).join(' · ')||'—';
     const exam=[d.paperName,d.examId,d.year].filter(Boolean).join(' · ')||'—';
     return '<tr class="align-top hover:bg-slate-50/80">'+
-      '<td class="px-5 py-4"><div class="font-bold text-slate-900">'+esc(d.fileName||'Unknown file')+'</div><div class="mt-1 max-w-xs truncate text-[10px] text-slate-400" title="'+esc(d.documentKey)+'">'+esc(d.documentKey||'')+'</div></td>'+
+      '<td class="px-5 py-4"><button type="button" class="document-link text-left font-bold text-indigo-700 hover:text-indigo-900 hover:underline" data-key="'+esc(d.documentKey||'')+'">'+esc(d.fileName||'Unknown file')+'</button><div class="mt-1 max-w-xs truncate text-[10px] text-slate-400" title="'+esc(d.documentKey)+'">'+esc(d.documentKey||'')+'</div></td>'+
       '<td class="px-5 py-4"><span class="rounded-full bg-indigo-50 px-2.5 py-1 text-[10px] font-black text-indigo-700">'+esc(sourceType)+'</span></td>'+
       '<td class="px-5 py-4 font-semibold">'+esc(d.subject||'—')+'</td>'+
       '<td class="px-5 py-4">'+esc(d.targetLevels||'—')+'</td>'+
@@ -105,6 +105,10 @@ async function load(){
   }catch(e){alertBox(e.message,true)}
 }
 document.getElementById('search').addEventListener('input',render);
+document.getElementById('documentRows').addEventListener('click',e=>{
+  const button=e.target.closest('.document-link');
+  if(button && button.dataset.key) location.href='document-content.html?documentKey='+encodeURIComponent(button.dataset.key);
+});
 load();
 </script>
 </body>

@@ -32,7 +32,7 @@ public class HybridRetrievalService {
             SELECT id, content, metadata::text AS metadata_text
               FROM document_embeddings
              WHERE metadata->>'source' = ?
-               AND metadata->>'subject' = ?
+               AND LOWER(metadata->>'subject') = LOWER(?)
                AND to_tsvector('simple', COALESCE(content,'')) @@ plainto_tsquery('simple', ?)
             """);
         List<Object> args = new ArrayList<>(List.of(source, subject == null ? "" : subject.trim().toLowerCase(), query));

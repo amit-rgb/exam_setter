@@ -25,7 +25,7 @@ class PdfIngestionServiceTest {
 
     @Test
     void parsesMultipleTargetLevelsForGenericUpload() {
-        PdfIngestionService service = new PdfIngestionService(mock(VectorStore.class));
+        PdfIngestionService service = new PdfIngestionService(mock(VectorStore.class), mock(StructureAwareChunker.class), mock(IngestionTrackingService.class), 2400, 400, "v2");
         assertThat(service.parseTargetLevelsForTest("class_11, CLASS_12, class_11"))
                 .containsExactly("CLASS_11", "CLASS_12");
     }

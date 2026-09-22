@@ -17,7 +17,7 @@ class NcertRetrievalServiceTest {
         when(store.similaritySearch(org.mockito.ArgumentMatchers.any(SearchRequest.class))).thenReturn(List.of(
                 new Document("ncert-1", "Thermodynamics", java.util.Map.of("documentKey", "NCERT-11-CHEM-CH06", "bookCode", "kech1", "chapterNumber", 6, "classLevel", "CLASS_11"))));
 
-        NcertRetrievalService service = new NcertRetrievalService(store, "2026");
+        NcertRetrievalService service = new NcertRetrievalService(store, mock(HybridRetrievalService.class), "2026");
         List<Document> result = service.retrieve("chemistry", List.of("CLASS_11"), "enthalpy and thermodynamics", "2026", "kech1", 6, 5);
 
         assertThat(result).hasSize(1);

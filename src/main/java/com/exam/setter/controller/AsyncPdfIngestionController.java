@@ -10,7 +10,6 @@ import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
 
 @RestController
 @RequestMapping("/api/ingest")
@@ -40,7 +39,7 @@ public class AsyncPdfIngestionController {
         if (topic != null && !topic.isBlank()) metadata.put("topic", topic.trim());
 
         byte[] bytes = file.getBytes();
-        CompletableFuture<Integer> future = service.ingest(bytes, file.getOriginalFilename(), file.getContentType(),
+        service.ingest(bytes, file.getOriginalFilename(), file.getContentType(),
                 subject, levels, sourceType, metadata);
 
         return ResponseEntity.accepted().body(Map.of(
@@ -49,6 +48,6 @@ public class AsyncPdfIngestionController {
                 "fileName", file.getOriginalFilename(),
                 "targetLevels", levels,
                 "sourceType", sourceType.toUpperCase(),
-                "jobState", future.toString()));
+                "refresh", "Use the ingestion dashboard to monitor pipeline status."));
     }
 }

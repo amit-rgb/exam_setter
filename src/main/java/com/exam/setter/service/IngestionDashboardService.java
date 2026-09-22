@@ -62,6 +62,37 @@ public class IngestionDashboardService {
         return response;
     }
 
+    public Map<String, Object> getDocumentContent(String documentKey) {
+        List<Map<String, Object>> chunks = jdbcTemplate.query("""
+                SELECT
+                    content,
+                    metadata->>'fileName' AS file_name,
+                    metadata->>'chunkIndex' AS chunk_index,
+                    metadata->>'pageNumber' AS page_number,
+                    metadata->>'sourceType' AS source_type
+                FROM document_embeddings
+                WHERE metadata->>'documentKey' = ?
+                ORDER BY
+                    NULLIF(metadata->>'pageNumber', '')::integer NULLS LAST,
+                    NULLIF(metadata->>'chunkIndex', '')::integer NULLS LAST,
+                    id
+                """, (rs, rowNum) -> {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("content", rs.getString("content"));
+            row.put("fileName", rs.getString("file_name"));
+            row.put("chunkIndex", rs.getString("chunk_index"));
+            row.put("pageNumber", rs.getString("page_number"));
+            row.put("sourceType", rs.getString("source_type"));
+            return row;
+        }, documentKey);
+
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("documentKey", documentKey);
+        response.put("chunkCount", chunks.size());
+        response.put("chunks", chunks);
+        return response;
+    }
+
     private String firstNonBlank(String first, String second) {
         return first != null && !first.isBlank() ? first : second;
     }

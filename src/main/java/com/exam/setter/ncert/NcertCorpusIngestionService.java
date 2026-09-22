@@ -190,6 +190,8 @@ public class NcertCorpusIngestionService {
             }
             if (!batch.isEmpty()) { tracking.status(entry.documentKey(), "INDEXING"); vectorStore.add(batch); }
             log.info("Indexed {} NCERT chunks for {}", chunkIndex, entry.documentKey());
+            tracking.status(entry.documentKey(), "VALIDATING");
+            if (chunkIndex <= 0) throw new IllegalStateException("No chunks were indexed for " + entry.documentKey());
             tracking.complete(entry.documentKey(), chunkIndex, pageCount);
             return chunkIndex;
         } catch (Exception ex) {

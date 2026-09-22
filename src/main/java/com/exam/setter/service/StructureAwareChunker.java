@@ -84,7 +84,7 @@ public class StructureAwareChunker {
     }
 
     private void flush(List<Paragraph> result, StringBuilder paragraph, String section) {
-        String text = paragraph.toString().replaceAll("\s+", " ").trim();
+        String text = paragraph.toString().replaceAll("\\s+", " ").trim();
         if (!text.isBlank()) result.add(new Paragraph(section, text));
         paragraph.setLength(0);
     }

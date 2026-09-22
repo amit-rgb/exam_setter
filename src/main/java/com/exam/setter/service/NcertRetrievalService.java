@@ -17,10 +17,12 @@ import java.util.Objects;
 public class NcertRetrievalService {
     private final VectorStore vectorStore;
     private final String defaultCorpusVersion;
+    private final HybridRetrievalService hybridRetrieval;
 
-    public NcertRetrievalService(VectorStore vectorStore,
+    public NcertRetrievalService(VectorStore vectorStore, HybridRetrievalService hybridRetrieval,
                                  @Value("${app.ncert.ingestion.corpus-version:2026}") String defaultCorpusVersion) {
         this.vectorStore = vectorStore;
+        this.hybridRetrieval = hybridRetrieval;
         this.defaultCorpusVersion = defaultCorpusVersion;
     }
 
@@ -80,7 +82,11 @@ public class NcertRetrievalService {
                     .toList();
         }
 
-        return rerank(candidates, levels, bookCode, chapterNumber, topK);
+        List<Document> keyword = hybridRetrieval.keywordSearch(searchQuery, "NCERT", normalizedSubject,
+                List.of("TEXTBOOK"), Math.min(40, Math.max(10, topK * 6)), version, bookCode, chapterNumber);
+        List<Document> merged = hybridRetrieval.merge(searchQuery, candidates, keyword, Math.min(20, Math.max(topK * 2, 10)));
+        List<Document> contextual = hybridRetrieval.expandContext(merged, 1, Math.min(30, Math.max(topK * 2, 10)));
+        return rerank(contextual, levels, bookCode, chapterNumber, topK);
     }
 
     private List<Document> rerank(List<Document> candidates, List<String> levels,

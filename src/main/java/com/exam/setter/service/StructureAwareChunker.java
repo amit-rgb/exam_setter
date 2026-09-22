@@ -8,12 +8,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Produces bounded chunks while preserving paragraph and heading boundaries.
- * The chunk text remains the original source text; structural context is
- * stored as metadata so the embedding model can include it when configured
- * with metadata-mode=EMBED.
- */
 @Service
 public class StructureAwareChunker {
 
@@ -21,7 +15,6 @@ public class StructureAwareChunker {
         List<Document> result = new ArrayList<>();
         int safeMax = Math.max(1200, maxChars);
         int safeOverlap = Math.max(0, Math.min(overlapChars, safeMax / 3));
-
         for (Document source : documents) {
             if (source == null || source.getText() == null || source.getText().isBlank()) continue;
             result.addAll(chunkDocument(source, safeMax, safeOverlap, chunkVersion));
@@ -30,60 +23,70 @@ public class StructureAwareChunker {
     }
 
     private List<Document> chunkDocument(Document source, int maxChars, int overlapChars, String chunkVersion) {
+        List<Paragraph> paragraphs = parseParagraphs(source.getText(),
+                String.valueOf(source.getMetadata().getOrDefault("sectionTitle", "")));
+        if (paragraphs.isEmpty()) paragraphs = List.of(new Paragraph("", source.getText().trim()));
+
         List<Document> result = new ArrayList<>();
-        String[] lines = source.getText().replace("\r", "").split("\n");
-        String currentSection = String.valueOf(source.getMetadata().getOrDefault("sectionTitle", ""));
-        List<String> paragraphs = new ArrayList<>();
-        StringBuilder paragraph = new StringBuilder();
-
-        for (String rawLine : lines) {
-            String line = rawLine.trim();
-            if (line.isBlank()) {
-                flushParagraph(paragraphs, paragraph);
-                continue;
-            }
-            if (isHeading(line)) {
-                flushParagraph(paragraphs, paragraph);
-                currentSection = cleanHeading(line);
-                continue;
-            }
-            paragraph.append(line).append('\n');
-        }
-        flushParagraph(paragraphs, paragraph);
-
-        if (paragraphs.isEmpty()) paragraphs.add(source.getText().trim());
-
         StringBuilder buffer = new StringBuilder();
-        String sectionForBuffer = currentSection;
-        int localIndex = 0;
+        String section = "";
+        int index = 0;
 
-        for (String paragraphText : paragraphs) {
-            String paragraphSection = extractSection(paragraphText);
-            if (!paragraphSection.isBlank()) sectionForBuffer = paragraphSection;
-
-            if (buffer.length() > 0 && buffer.length() + paragraphText.length() + 1 > maxChars) {
-                result.add(build(source, buffer.toString().trim(), sectionForBuffer, localIndex++, chunkVersion));
+        for (Paragraph paragraph : paragraphs) {
+            if (buffer.length() > 0 && buffer.length() + paragraph.text().length() + 1 > maxChars) {
+                result.add(build(source, buffer.toString().trim(), section, index++, chunkVersion));
                 String overlap = tail(buffer.toString(), overlapChars);
                 buffer.setLength(0);
                 if (!overlap.isBlank()) buffer.append(overlap).append('\n');
             }
-            if (paragraphText.length() > maxChars) {
+
+            if (paragraph.text().length() > maxChars) {
                 if (buffer.length() > 0) {
-                    result.add(build(source, buffer.toString().trim(), sectionForBuffer, localIndex++, chunkVersion));
+                    result.add(build(source, buffer.toString().trim(), section, index++, chunkVersion));
                     buffer.setLength(0);
                 }
-                for (String piece : hardSplit(paragraphText, maxChars)) {
-                    result.add(build(source, piece, sectionForBuffer, localIndex++, chunkVersion));
+                for (String piece : hardSplit(paragraph.text(), maxChars)) {
+                    result.add(build(source, piece, paragraph.section(), index++, chunkVersion));
                 }
+                section = paragraph.section();
             } else {
-                buffer.append(paragraphText).append('\n');
+                if (!paragraph.section().isBlank()) section = paragraph.section();
+                buffer.append(paragraph.text()).append('\n');
             }
         }
 
         if (!buffer.toString().isBlank()) {
-            result.add(build(source, buffer.toString().trim(), sectionForBuffer, localIndex, chunkVersion));
+            result.add(build(source, buffer.toString().trim(), section, index, chunkVersion));
         }
         return result;
+    }
+
+    private List<Paragraph> parseParagraphs(String text, String initialSection) {
+        List<Paragraph> result = new ArrayList<>();
+        String currentSection = initialSection == null ? "" : initialSection.trim();
+        StringBuilder paragraph = new StringBuilder();
+
+        for (String raw : text.replace("\r", "").split("\n")) {
+            String line = raw.trim();
+            if (line.isBlank()) {
+                flush(result, paragraph, currentSection);
+                continue;
+            }
+            if (isHeading(line)) {
+                flush(result, paragraph, currentSection);
+                currentSection = cleanHeading(line);
+                continue;
+            }
+            paragraph.append(line).append(' ');
+        }
+        flush(result, paragraph, currentSection);
+        return result;
+    }
+
+    private void flush(List<Paragraph> result, StringBuilder paragraph, String section) {
+        String text = paragraph.toString().replaceAll("\s+", " ").trim();
+        if (!text.isBlank()) result.add(new Paragraph(section, text));
+        paragraph.setLength(0);
     }
 
     private Document build(Document source, String text, String section, int index, String version) {
@@ -102,9 +105,8 @@ public class StructureAwareChunker {
     }
 
     private boolean looksLikeTable(String text) {
-        String[] lines = text.split("\n");
         int tableLike = 0;
-        for (String line : lines) {
+        for (String line : text.split("\n")) {
             if (line.contains("|") || line.matches(".*\\S\\s{3,}\\S.*")) tableLike++;
         }
         return tableLike >= 2;
@@ -121,17 +123,6 @@ public class StructureAwareChunker {
 
     private String cleanHeading(String line) {
         return line.replaceAll("\\s+", " ").trim();
-    }
-
-    private String extractSection(String paragraph) {
-        return "";
-    }
-
-    private void flushParagraph(List<String> paragraphs, StringBuilder paragraph) {
-        if (!paragraph.toString().isBlank()) {
-            paragraphs.add(paragraph.toString().replaceAll("\\s+", " ").trim());
-            paragraph.setLength(0);
-        }
     }
 
     private String tail(String text, int chars) {
@@ -155,4 +146,6 @@ public class StructureAwareChunker {
         }
         return pieces;
     }
+
+    private record Paragraph(String section, String text) {}
 }

@@ -1,5 +1,7 @@
 package com.exam.setter.service;
 
+import org.apache.pdfbox.Loader;
+import org.apache.pdfbox.pdmodel.PDDocument;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.document.Document;
@@ -122,7 +124,7 @@ public class PdfIngestionService {
                 vectorStore.add(enrichedDocs.subList(i, Math.min(i + 50, enrichedDocs.size())));
             }
 
-            tracking.complete(documentKey, enrichedDocs.size(), countPages(extractedDocs));
+            tracking.complete(documentKey, enrichedDocs.size(), countPages(tempPath));
             log.info("Completed production ingestion: {} chunks from {}", enrichedDocs.size(), file.getOriginalFilename());
             return enrichedDocs.size();
         } catch (IOException | IllegalArgumentException ex) {
@@ -136,14 +138,12 @@ public class PdfIngestionService {
         }
     }
 
-    private int countPages(List<Document> documents) {
-        return documents.stream()
-                .map(d -> d.getMetadata().get("pageNumber"))
-                .filter(v -> v != null)
-                .mapToInt(v -> {
-                    try { return Integer.parseInt(String.valueOf(v)); } catch (NumberFormatException e) { return 0; }
-                })
-                .max().orElse(0);
+    private int countPages(Path pdf) {
+        try (PDDocument document = Loader.loadPDF(pdf.toFile())) {
+            return document.getNumberOfPages();
+        } catch (Exception ex) {
+            return 0;
+        }
     }
 
     private List<String> parseTargetLevels(String rawTargetLevels) {

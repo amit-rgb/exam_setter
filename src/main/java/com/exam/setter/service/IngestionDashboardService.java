@@ -11,9 +11,11 @@ import java.util.Map;
 public class IngestionDashboardService {
 
     private final JdbcTemplate jdbcTemplate;
+    private final IngestionTrackingService tracking;
 
-    public IngestionDashboardService(JdbcTemplate jdbcTemplate) {
+    public IngestionDashboardService(JdbcTemplate jdbcTemplate, IngestionTrackingService tracking) {
         this.jdbcTemplate = jdbcTemplate;
+        this.tracking = tracking;
     }
 
     public Map<String, Object> getDashboard() {
@@ -59,6 +61,9 @@ public class IngestionDashboardService {
         response.put("totalChunks", documents.stream()
                 .mapToLong(d -> ((Number) d.get("indexedChunks")).longValue()).sum());
         response.put("documents", documents);
+        List<Map<String,Object>> ingestion = tracking.list();
+        response.put("ingestionStatus", ingestion);
+        response.put("ingestionMetrics", buildMetrics(ingestion));
         return response;
     }
 
@@ -91,6 +96,22 @@ public class IngestionDashboardService {
         response.put("chunkCount", chunks.size());
         response.put("chunks", chunks);
         return response;
+    }
+
+    private Map<String,Object> buildMetrics(List<Map<String,Object>> rows) {
+        Map<String,Object> metrics = new LinkedHashMap<>();
+        metrics.put("trackedDocuments", rows.size());
+        metrics.put("completed", rows.stream().filter(r -> "COMPLETED".equals(r.get("status"))).count());
+        metrics.put("failed", rows.stream().filter(r -> "FAILED".equals(r.get("status"))).count());
+        metrics.put("active", rows.stream().filter(r -> {
+            Object status = r.get("status");
+            return status != null && !List.of("COMPLETED","FAILED").contains(status.toString());
+        }).count());
+        metrics.put("totalPages", rows.stream().map(r -> r.get("totalPages")).filter(v -> v instanceof Number)
+                .mapToLong(v -> ((Number)v).longValue()).sum());
+        metrics.put("totalTrackedChunks", rows.stream().map(r -> r.get("totalChunks")).filter(v -> v instanceof Number)
+                .mapToLong(v -> ((Number)v).longValue()).sum());
+        return metrics;
     }
 
     private String firstNonBlank(String first, String second) {

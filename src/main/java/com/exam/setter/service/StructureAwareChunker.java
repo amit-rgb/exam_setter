@@ -116,6 +116,7 @@ public class StructureAwareChunker {
         if (line.length() > 120 || line.endsWith(".") || line.endsWith(",")) return false;
         if (line.matches("^(?:\\d+(?:\\.\\d+)*|[A-Z]|[IVX]+)[\\).:]?\\s+.+")) return true;
         if (line.endsWith(":")) return true;
+        if (line.matches("(?:[A-Z][a-z]+\\s+){1,}[A-Z][a-z]+")) return true;
         long letters = line.chars().filter(Character::isLetter).count();
         long upper = line.chars().filter(Character::isUpperCase).count();
         return letters >= 4 && upper >= Math.max(2, letters * 0.65);

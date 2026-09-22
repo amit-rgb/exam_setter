@@ -1,132 +1,47 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Assessment Studio · Dashboard</title>
-<script src="https://cdn.tailwindcss.com"></script>
-<link rel="stylesheet" href="app.css">
+<script src="https://cdn.tailwindcss.com"></script><link rel="stylesheet" href="app.css">
 </head>
 <body class="min-h-screen bg-slate-50 text-slate-900 antialiased">
 <header class="app-header sticky top-0 z-50 border-b border-slate-200/80 bg-white/90 backdrop-blur-xl">
   <div class="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-4 md:px-6">
-    <a href="index.html" class="flex items-center gap-3 rounded-2xl">
-      <div class="brand-mark flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-950 text-xl">📝</div>
-      <div><div class="text-base font-extrabold tracking-tight md:text-lg">Assessment Studio</div><div class="text-[11px] font-medium text-slate-500">AI Assessment Authoring Platform</div></div>
-    </a>
+    <a href="index.html" class="flex items-center gap-3 rounded-2xl"><div class="brand-mark flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-950 text-xl">📝</div><div><div class="text-base font-extrabold tracking-tight md:text-lg">Assessment Studio</div><div class="text-[11px] font-medium text-slate-500">AI Assessment Authoring Platform</div></div></a>
     <a href="index.html" class="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50">← Home</a>
   </div>
 </header>
-
 <main class="mx-auto max-w-7xl px-4 py-8 md:px-6 md:py-12">
-  <section class="mb-8">
-    <div class="mb-3 inline-flex rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-[11px] font-black uppercase text-indigo-700">Knowledge Base</div>
-    <h1 class="text-3xl font-black tracking-tight md:text-5xl">Ingestion Dashboard</h1>
-    <p class="mt-3 max-w-3xl text-sm leading-6 text-slate-600">View every PDF represented in the indexed document store, together with its source type, subject, target levels and indexing details.</p>
-  </section>
-
+  <section class="mb-8"><div class="mb-3 inline-flex rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-[11px] font-black uppercase text-indigo-700">Knowledge Base</div><h1 class="text-3xl font-black tracking-tight md:text-5xl">Ingestion Dashboard</h1><p class="mt-3 max-w-3xl text-sm leading-6 text-slate-600">Monitor indexed documents, chunk quality and the production ingestion lifecycle.</p></section>
   <div id="alertBox" class="mb-6 hidden rounded-2xl border px-4 py-3 text-sm font-semibold"></div>
 
   <section class="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-    <div class="rounded-3xl border border-indigo-100 bg-white p-6 shadow-sm">
-      <div class="text-xs font-black uppercase tracking-wider text-slate-400">Ingested PDFs</div>
-      <div id="totalDocuments" class="mt-2 text-4xl font-black text-indigo-700">—</div>
-    </div>
-    <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-      <div class="text-xs font-black uppercase tracking-wider text-slate-400">Indexed chunks</div>
-      <div id="totalChunks" class="mt-2 text-4xl font-black">—</div>
-    </div>
+    <div class="rounded-3xl border border-indigo-100 bg-white p-6 shadow-sm"><div class="text-xs font-black uppercase tracking-wider text-slate-400">Indexed PDFs</div><div id="totalDocuments" class="mt-2 text-4xl font-black text-indigo-700">—</div></div>
+    <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"><div class="text-xs font-black uppercase tracking-wider text-slate-400">Indexed chunks</div><div id="totalChunks" class="mt-2 text-4xl font-black">—</div></div>
+    <div class="rounded-3xl border border-emerald-100 bg-white p-6 shadow-sm"><div class="text-xs font-black uppercase tracking-wider text-slate-400">Completed</div><div id="completedDocuments" class="mt-2 text-4xl font-black text-emerald-700">—</div></div>
+    <div class="rounded-3xl border border-rose-100 bg-white p-6 shadow-sm"><div class="text-xs font-black uppercase tracking-wider text-slate-400">Failed</div><div id="failedDocuments" class="mt-2 text-4xl font-black text-rose-700">—</div></div>
+  </section>
+
+  <section class="mb-8 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+    <div class="border-b border-slate-200 p-5"><h2 class="text-lg font-black">Ingestion pipeline status</h2><p class="mt-1 text-xs text-slate-500">Parsing → chunking → indexing → validation lifecycle.</p></div>
+    <div class="overflow-x-auto"><table class="min-w-[950px] w-full text-left text-sm"><thead class="bg-slate-50 text-[11px] font-black uppercase tracking-wider text-slate-500"><tr><th class="px-5 py-3">Document</th><th class="px-5 py-3">Status</th><th class="px-5 py-3">Chunks</th><th class="px-5 py-3">Pages</th><th class="px-5 py-3">Pipeline</th><th class="px-5 py-3">Updated</th></tr></thead><tbody id="ingestionRows" class="divide-y divide-slate-100"></tbody></table></div>
   </section>
 
   <section class="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
-    <div class="flex flex-col gap-3 border-b border-slate-200 p-5 md:flex-row md:items-center md:justify-between">
-      <div>
-        <h2 class="text-lg font-black">Ingested documents</h2>
-        <p id="resultCount" class="mt-1 text-xs text-slate-500"></p>
-      </div>
-      <input id="search" type="search" placeholder="Search file, subject, level, source…" class="field w-full rounded-xl border px-4 py-2.5 text-sm md:w-80">
-    </div>
-    <div class="overflow-x-auto">
-      <table class="min-w-[1100px] w-full text-left text-sm">
-        <thead class="bg-slate-50 text-[11px] font-black uppercase tracking-wider text-slate-500">
-          <tr>
-            <th class="px-5 py-4">PDF</th>
-            <th class="px-5 py-4">Source</th>
-            <th class="px-5 py-4">Subject</th>
-            <th class="px-5 py-4">Target level</th>
-            <th class="px-5 py-4">Chapter / Topic</th>
-            <th class="px-5 py-4">Exam / Year</th>
-            <th class="px-5 py-4">Chunks</th><th class="px-5 py-4">Status</th>
-          </tr>
-        </thead>
-        <tbody id="documentRows" class="divide-y divide-slate-100"></tbody>
-      </table>
-    </div>
+    <div class="flex flex-col gap-3 border-b border-slate-200 p-5 md:flex-row md:items-center md:justify-between"><div><h2 class="text-lg font-black">Ingested documents</h2><p id="resultCount" class="mt-1 text-xs text-slate-500"></p></div><input id="search" type="search" placeholder="Search file, subject, level, source…" class="field w-full rounded-xl border px-4 py-2.5 text-sm md:w-80"></div>
+    <div class="overflow-x-auto"><table class="min-w-[1200px] w-full text-left text-sm"><thead class="bg-slate-50 text-[11px] font-black uppercase tracking-wider text-slate-500"><tr><th class="px-5 py-4">PDF</th><th class="px-5 py-4">Source</th><th class="px-5 py-4">Subject</th><th class="px-5 py-4">Target level</th><th class="px-5 py-4">Chapter / Topic</th><th class="px-5 py-4">Exam / Year</th><th class="px-5 py-4">Chunks</th><th class="px-5 py-4">Status</th></tr></thead><tbody id="documentRows" class="divide-y divide-slate-100"></tbody></table></div>
     <div id="emptyState" class="hidden p-10 text-center text-sm text-slate-500">No ingested PDFs found.</div>
   </section>
 </main>
-
 <script>
-const esc=v=>String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;').replace(/'/g,'&#039;');
-let documents=[];
-let ingestionStatus=[];
+const esc=v=>String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');
+let documents=[], ingestionStatus=[];
 const alertBox=(msg,error=false)=>{const b=document.getElementById('alertBox');b.textContent=msg;b.className='mb-6 rounded-2xl border px-4 py-3 text-sm font-semibold '+(error?'border-rose-200 bg-rose-50 text-rose-700':'border-emerald-200 bg-emerald-50 text-emerald-700');b.classList.remove('hidden')};
-
-function statusBadge(status){
-  const s=String(status||'NOT_TRACKED').toUpperCase();
-  const cls=s==='COMPLETED'?'bg-emerald-50 text-emerald-700':s==='FAILED'?'bg-rose-50 text-rose-700':s==='NOT_TRACKED'?'bg-slate-100 text-slate-500':'bg-amber-50 text-amber-700';
-  return '<span class="rounded-full px-2.5 py-1 text-[10px] font-black '+cls+'">'+esc(s)+'</span>';
-}
-function renderIngestion(){
-  const rows=ingestionStatus||[];
-  document.getElementById('ingestionRows').innerHTML=rows.map(r=>'<tr><td class="px-5 py-3 font-semibold">'+esc(r.fileName||r.documentKey)+'</td><td class="px-5 py-3">'+statusBadge(r.status)+'</td><td class="px-5 py-3">'+esc(r.totalChunks??0)+'</td><td class="px-5 py-3">'+esc(r.totalPages??0)+'</td><td class="px-5 py-3 text-slate-500">'+esc(r.pipelineVersion||'—')+' / '+esc(r.chunkVersion||'—')+'</td><td class="px-5 py-3 text-slate-500">'+esc(r.completedAt||r.startedAt||'—')+'</td></tr>').join('');
-}
-function render(){
-  const term=document.getElementById('search').value.trim().toLowerCase();
-  const rows=documents.filter(d=>[
-    d.fileName,d.source,d.sourceType,d.subject,d.targetLevels,d.language,d.chapterTitle,d.topic,d.examId,d.year,d.paperName
-  ].some(v=>String(v??'').toLowerCase().includes(term)));
-  document.getElementById('resultCount').textContent=rows.length+' document'+(rows.length===1?'':'s')+(term?' matching your search':'');
-  document.getElementById('emptyState').classList.toggle('hidden',rows.length!==0);
-  document.getElementById('documentRows').innerHTML=rows.map(d=>{
-    const sourceType=d.sourceType||d.source||'—';
-    const chapter=[d.chapterTitle,d.topic].filter(Boolean).join(' · ')||'—';
-    const exam=[d.paperName,d.examId,d.year].filter(Boolean).join(' · ')||'—';
-    return '<tr class="align-top hover:bg-slate-50/80">'+
-      '<td class="px-5 py-4"><button type="button" class="document-link text-left font-bold text-indigo-700 hover:text-indigo-900 hover:underline" data-key="'+esc(d.documentKey||'')+'">'+esc(d.fileName||'Unknown file')+'</button><div class="mt-1 max-w-xs truncate text-[10px] text-slate-400" title="'+esc(d.documentKey)+'">'+esc(d.documentKey||'')+'</div></td>'+
-      '<td class="px-5 py-4"><span class="rounded-full bg-indigo-50 px-2.5 py-1 text-[10px] font-black text-indigo-700">'+esc(sourceType)+'</span></td>'+
-      '<td class="px-5 py-4 font-semibold">'+esc(d.subject||'—')+'</td>'+
-      '<td class="px-5 py-4">'+esc(d.targetLevels||'—')+'</td>'+
-      '<td class="px-5 py-4 text-slate-600">'+esc(chapter)+'</td>'+
-      '<td class="px-5 py-4 text-slate-600">'+esc(exam)+'</td>'+
-      '<td class="px-5 py-4 font-black">'+esc(d.indexedChunks)+'</td>'+
-      '</tr>';
-  }).join('');
-}
-async function load(){
-  try{
-    const r=await fetch('/api/dashboard/ingested-documents');
-    const d=await r.json().catch(()=>({}));
-    if(!r.ok) throw new Error(d.message||d.error||'Unable to load dashboard.');
-    documents=Array.isArray(d.documents)?d.documents:[];
-    ingestionStatus=Array.isArray(d.ingestionStatus)?d.ingestionStatus:[];
-    const statusMap=new Map(ingestionStatus.map(x=>[x.documentKey,x.status]));
-    documents=documents.map(x=>({...x,status:statusMap.get(x.documentKey)||'NOT_TRACKED'}));
-    const metrics=d.ingestionMetrics||{};
-    document.getElementById('completedDocuments').textContent=metrics.completed??'0';
-    document.getElementById('failedDocuments').textContent=metrics.failed??'0';
-    renderIngestion();
-    document.getElementById('totalDocuments').textContent=d.totalDocuments??documents.length;
-    document.getElementById('totalChunks').textContent=d.totalChunks??'0';
-    render();
-  }catch(e){alertBox(e.message,true)}
-}
-document.getElementById('search').addEventListener('input',render);
-document.getElementById('documentRows').addEventListener('click',e=>{
-  const button=e.target.closest('.document-link');
-  if(button && button.dataset.key) location.href='document-content.html?documentKey='+encodeURIComponent(button.dataset.key);
-});
-load();
+function statusBadge(status){const s=String(status||'NOT_TRACKED').toUpperCase();const cls=s==='COMPLETED'?'bg-emerald-50 text-emerald-700':s==='FAILED'?'bg-rose-50 text-rose-700':s==='NOT_TRACKED'?'bg-slate-100 text-slate-500':'bg-amber-50 text-amber-700';return '<span class="rounded-full px-2.5 py-1 text-[10px] font-black '+cls+'">'+esc(s)+'</span>'}
+function renderIngestion(){document.getElementById('ingestionRows').innerHTML=(ingestionStatus||[]).map(r=>'<tr><td class="px-5 py-3 font-semibold">'+esc(r.fileName||r.documentKey)+'</td><td class="px-5 py-3">'+statusBadge(r.status)+'</td><td class="px-5 py-3">'+esc(r.totalChunks??0)+'</td><td class="px-5 py-3">'+esc(r.totalPages??0)+'</td><td class="px-5 py-3 text-slate-500">'+esc(r.pipelineVersion||'—')+' / '+esc(r.chunkVersion||'—')+'</td><td class="px-5 py-3 text-slate-500">'+esc(r.completedAt||r.startedAt||'—')+'</td></tr>').join('')}
+function render(){const term=document.getElementById('search').value.trim().toLowerCase();const rows=documents.filter(d=>[d.fileName,d.source,d.sourceType,d.subject,d.targetLevels,d.language,d.chapterTitle,d.topic,d.examId,d.year,d.paperName].some(v=>String(v??'').toLowerCase().includes(term)));document.getElementById('resultCount').textContent=rows.length+' document'+(rows.length===1?'':'s')+(term?' matching your search':'');document.getElementById('emptyState').classList.toggle('hidden',rows.length!==0);document.getElementById('documentRows').innerHTML=rows.map(d=>{const sourceType=d.sourceType||d.source||'—';const chapter=[d.chapterTitle,d.topic].filter(Boolean).join(' · ')||'—';const exam=[d.paperName,d.examId,d.year].filter(Boolean).join(' · ')||'—';return '<tr class="align-top hover:bg-slate-50/80"><td class="px-5 py-4"><button type="button" class="document-link text-left font-bold text-indigo-700 hover:text-indigo-900 hover:underline" data-key="'+esc(d.documentKey||'')+'">'+esc(d.fileName||'Unknown file')+'</button><div class="mt-1 max-w-xs truncate text-[10px] text-slate-400" title="'+esc(d.documentKey)+'">'+esc(d.documentKey||'')+'</div></td><td class="px-5 py-4"><span class="rounded-full bg-indigo-50 px-2.5 py-1 text-[10px] font-black text-indigo-700">'+esc(sourceType)+'</span></td><td class="px-5 py-4 font-semibold">'+esc(d.subject||'—')+'</td><td class="px-5 py-4">'+esc(d.targetLevels||'—')+'</td><td class="px-5 py-4 text-slate-600">'+esc(chapter)+'</td><td class="px-5 py-4 text-slate-600">'+esc(exam)+'</td><td class="px-5 py-4 font-black">'+esc(d.indexedChunks)+'</td><td class="px-5 py-4">'+statusBadge(d.status)+'</td></tr>}).join('')}
+async function load(){try{const r=await fetch('/api/dashboard/ingested-documents');const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.message||d.error||'Unable to load dashboard.');documents=Array.isArray(d.documents)?d.documents:[];ingestionStatus=Array.isArray(d.ingestionStatus)?d.ingestionStatus:[];const statusMap=new Map(ingestionStatus.map(x=>[x.documentKey,x.status]));documents=documents.map(x=>({...x,status:statusMap.get(x.documentKey)||'NOT_TRACKED'}));const metrics=d.ingestionMetrics||{};document.getElementById('totalDocuments').textContent=d.totalDocuments??documents.length;document.getElementById('totalChunks').textContent=d.totalChunks??'0';document.getElementById('completedDocuments').textContent=metrics.completed??'0';document.getElementById('failedDocuments').textContent=metrics.failed??'0';renderIngestion();render()}catch(e){alertBox(e.message,true)}}
+document.getElementById('search').addEventListener('input',render);document.getElementById('documentRows').addEventListener('click',e=>{const button=e.target.closest('.document-link');if(button&&button.dataset.key)location.href='document-content.html?documentKey='+encodeURIComponent(button.dataset.key)});load();
 </script>
-</body>
-</html>
+</body></html>
